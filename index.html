@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lead, Manage, Coach</title>
+<meta name="description" content="A decision tool for franchise leaders: pick Lead, Manage or Coach, answer plain questions, then choose a next step.">
+<meta name="theme-color" content="#F3F4F8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D1220" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="LMC Desk">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one column. A Today screen lists decisions and next steps; "New decision" opens a one-question-per-screen guided flow. Each discipline owns a color: Lead is indigo, Manage is pine, Coach is berry. Amber is kept for the pause and anything due. */
+:root {
+  --bg: #F3F4F8;
+  --surface: #FFFFFF;
+  --field: #F7F8FB;
+  --fg: #14213D;
+  --muted: #5A6479;
+  --line: #D8DCE8;
+  --accent: #2B4C9B;
+  --accent-fg: #FFFFFF;
+  --accent-soft: #E3E9F8;
+  --lead: #2B4C9B; --lead-soft: #E3E9F8;
+  --manage: #1D7566; --manage-soft: #DDF0EB;
+  --coach: #8E3B7A; --coach-soft: #F3E3EF;
+  --warn: #9A4A06;
+  --warn-soft: #F7E8D6;
+  --crit: #B3261E;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --body: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1220; --surface: #151C30; --field: #10162A; --fg: #E8ECF6; --muted: #98A2BC;
+    --line: #29324D; --accent: #8FA9F0; --accent-fg: #0B1630; --accent-soft: #1B2745;
+    --lead: #8FA9F0; --lead-soft: #1B2745; --manage: #5CCBB7; --manage-soft: #14332D; --coach: #E39BD0; --coach-soft: #3A1B33;
+    --warn: #EBA561; --warn-soft: #33261A; --crit: #F0877F; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1220; --surface: #151C30; --field: #10162A; --fg: #E8ECF6; --muted: #98A2BC;
+  --line: #29324D; --accent: #8FA9F0; --accent-fg: #0B1630; --accent-soft: #1B2745;
+  --lead: #8FA9F0; --lead-soft: #1B2745; --manage: #5CCBB7; --manage-soft: #14332D; --coach: #E39BD0; --coach-soft: #3A1B33;
+  --warn: #EBA561; --warn-soft: #33261A; --crit: #F0877F; color-scheme: dark;
+}
+[data-d="Lead"] { --dc: var(--lead); --ds: var(--lead-soft); }
+[data-d="Manage"] { --dc: var(--manage); --ds: var(--manage-soft); }
+[data-d="Coach"] { --dc: var(--coach); --ds: var(--coach-soft); }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 17px; line-height: 1.5; }
+.wrap { max-width: 640px; margin-inline: auto; padding-inline: 16px; padding-block: 20px 120px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--display); font-weight: 700; font-size: 32px; line-height: 1.1; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 25px; line-height: 1.2; margin: 0; text-wrap: balance; }
+h3 { font-family: var(--display); font-weight: 600; font-size: 18px; margin: 0; }
+.lede { color: var(--muted); margin: 6px 0 0; max-width: 60ch; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.stack.tight { gap: 10px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+label, .lab { font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+label.q { font-family: var(--body); font-size: 17px; letter-spacing: 0; text-transform: none; color: var(--fg); font-weight: 600; }
+.hint { color: var(--muted); font-size: 15px; margin: 0; }
+input[type="text"], input[type="date"], textarea {
+  width: 100%; font: inherit; font-size: 17px; color: var(--fg); background: var(--field);
+  border: 1px solid var(--line); border-radius: 8px; padding: 11px 12px; min-width: 0; min-height: 48px;
+}
+textarea { resize: vertical; min-height: 96px; line-height: 1.45; }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.75; }
+input:focus-visible, textarea:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn {
+  font: inherit; font-weight: 600; font-size: 17px; min-height: 52px; padding: 0 20px; border-radius: 8px;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); cursor: pointer;
+}
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn.small { min-height: 42px; font-size: 15px; padding: 0 14px; }
+.btn.danger { color: var(--crit); border-color: var(--line); background: transparent; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.actions .btn { flex: 1 1 140px; }
+.mono { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.02em; }
+.banner { background: var(--accent-soft); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.banner.warn { background: var(--warn-soft); }
+.banner strong { font-family: var(--display); font-size: 17px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { position: relative; display: block; text-transform: none; letter-spacing: 0; font-family: var(--body); font-size: 16px; color: var(--fg); }
+.chip input { position: absolute; opacity: 0; inset: 0; margin: 0; width: 100%; height: 100%; cursor: pointer; }
+.chip span { display: flex; align-items: center; min-height: 48px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); font-weight: 500; }
+.chip input:checked + span { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chips.col { flex-direction: column; }
+.chips.col .chip span { min-height: 56px; }
+.chips.warnset .chip input:checked + span { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 400px) { .two { grid-template-columns: 1fr; } }
+.progress { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.progress .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.progress .bar i { display: block; height: 100%; background: var(--accent); }
+.progress .row { display: flex; justify-content: space-between; align-items: center; }
+.linkbtn { font: inherit; font-size: 15px; background: none; border: 0; color: var(--accent); padding: 8px 0; min-height: 44px; cursor: pointer; font-weight: 600; }
+.pause { align-items: center; text-align: center; padding-block: 36px; background: var(--warn-soft); border-color: var(--warn); }
+.pause .count { font-family: var(--display); font-weight: 700; font-size: 100px; line-height: 1; color: var(--warn); font-variant-numeric: tabular-nums; }
+.pause p { margin: 0; max-width: 32ch; }
+.pause .bar { width: 100%; height: 6px; background: var(--surface); border-radius: 3px; overflow: hidden; }
+.pause .bar i { display: block; height: 100%; width: 0; background: var(--warn); }
+.flowbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--surface); border-top: 1px solid var(--line);
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+}
+.flowbar div { max-width: 640px; margin-inline: auto; display: flex; gap: 10px; }
+.flowbar .btn { flex: 1; }
+.flowbar .btn.ghost { flex: 0 0 auto; }
+details.entry { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0 14px; }
+details.entry summary { cursor: pointer; padding: 12px 0; display: flex; flex-direction: column; gap: 6px; list-style: none; min-height: 48px; }
+details.entry summary::-webkit-details-marker { display: none; }
+details.entry summary .t { font-weight: 600; overflow-wrap: anywhere; }
+details.entry .body { display: flex; flex-direction: column; gap: 14px; padding-bottom: 14px; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pill { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 4px; background: var(--field); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; }
+.pill.hot { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+.pill.live { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+dl.sum { margin: 0; display: grid; grid-template-columns: 96px 1fr; gap: 6px 12px; font-size: 16px; }
+dl.sum dt { font-family: var(--mono); font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding-top: 3px; }
+dl.sum dd { margin: 0; overflow-wrap: anywhere; }
+.next { font-size: 15px; color: var(--muted); overflow-wrap: anywhere; }
+.next b { color: var(--fg); font-weight: 600; }
+pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.empty { color: var(--muted); margin: 0; font-size: 16px; }
+.example { border-style: dashed; }
+.jot { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.jot .text { overflow-wrap: anywhere; white-space: pre-wrap; }
+.steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+.steps span { color: var(--muted); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 15px; z-index: 20; max-width: calc(100% - 32px); }
+.disc-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tile { font: inherit; text-align: left; border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; padding: 10px; min-height: 92px; display: flex; flex-direction: column; gap: 2px; cursor: pointer; min-width: 0; }
+.tile[aria-pressed="true"] { background: var(--ds, var(--accent-soft)); border-color: var(--dc, var(--accent)); }
+.tile .l { font-family: var(--display); font-weight: 700; font-size: 19px; color: var(--dc, var(--accent)); }
+.tile .s { font-size: 13px; color: var(--muted); line-height: 1.3; }
+.tile .n { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: auto; padding-top: 4px; }
+.mark { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1.5px solid var(--dc, var(--accent)); color: var(--dc, var(--accent)); background: var(--ds, transparent); font-family: var(--mono); font-weight: 500; font-size: 12px; border-radius: 3px; flex: none; }
+.brand { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chip.disc span { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; }
+.chip.disc input:checked + span { background: var(--ds); border-color: var(--dc); color: var(--dc); }
+.chip.disc small { font-weight: 400; color: var(--muted); font-size: 14px; }
+@media (prefers-reduced-motion: no-preference) { .pause .bar i { transition: width 1s linear; } .progress .bar i { transition: width .25s ease; } }
+</style>
+
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function () {
+  var KEY = 'decision-desk-v2';
+  var OLD = 'decision-desk-v1';
+  var state = { records: [], jots: [], draft: null };
+  var flow = null;
+  var timer = null;
+  var app = document.getElementById('app');
+
+  /* ---------- Content ---------- */
+  var TESTS = [
+    { k: 'evidence', q: 'What have you actually seen or measured that backs this up?', ph: 'Example: Last quarter, 3 of 4 franchisees had open capacity.' },
+    { k: 'history', q: 'How often has this held true in similar cases?', ph: 'Example: It held about half the time.' },
+    { k: 'motive', q: 'Do you want this to be true? What do you gain if it is?', ph: 'Example: Yes. It makes the plan much simpler.' }
+  ];
+  var CHECK = ['Solid', 'Needs checking', 'Does not hold'];
+  var WORRIES = {
+    'We could not deliver': [
+      { k: 'a0', q: 'What one person, supplier or process, if it fails, stops everything?' },
+      { k: 'a1', q: 'What is your backup, and has anyone ever tried it?' }
+    ],
+    'Competitors cut prices': [
+      { k: 'a0', q: 'At what price cut do we stop making money?' },
+      { k: 'a1', q: 'What do we offer that a competitor cannot easily copy?' }
+    ],
+    'People did not adopt it': [
+      { k: 'a0', q: 'What will people have to stop doing for this to work?' },
+      { k: 'a1', q: 'Who will resist, and what do they lose?' }
+    ],
+    'The economy shifted': [
+      { k: 'a0', q: 'Which cost or customer demand would hurt most if it moved 20%?' },
+      { k: 'a1', q: 'What could you pause quickly if money tightened?' }
+    ]
+  };
+  var DISC = {
+    'Lead': { m: 'L', line: 'Set direction', desc: 'Where are we going, and why?', ph: 'Example: Should we open a regional lead-share program?', act: 'Example: Share the new direction with every franchisee on the next call.' },
+    'Manage': { m: 'M', line: 'Run the results', desc: 'Numbers, KPIs, systems and variances.', ph: 'Example: Should we replace our job-costing process this quarter?', act: 'Example: Pull the latest variance report and review it by Friday.' },
+    'Coach': { m: 'C', line: 'Develop a person', desc: 'Their growth, performance or a hard conversation.', ph: 'Example: Should I move a strong technician into the GM role?', act: 'Example: Hold a 30-minute feedback conversation this week.' }
+  };
+  var filterDisc = '';
+  var VERDICTS = ['Go', 'Test first', 'Wait', 'Stop'];
+  var HALT = { 'Wait': 1, 'Stop': 1 };
+
+  /* ---------- Storage ---------- */
+  function load() {
+    var got = false;
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) {
+        var o = JSON.parse(raw);
+        if (o && typeof o === 'object') {
+          if (Array.isArray(o.records)) state.records = o.records;
+          if (Array.isArray(o.jots)) state.jots = o.jots;
+          if (o.draft) state.draft = o.draft;
+          got = true;
+        }
+      }
+    } catch (e) {}
+    if (got) return;
+    try {
+      var old = localStorage.getItem(OLD);
+      if (!old) return;
+      var p = JSON.parse(old);
+      var map = { 'Proceed': 'Go', 'Test first': 'Test first', 'Pause': 'Wait', 'Stop': 'Stop' };
+      (p.records || []).forEach(function (r) {
+        if (!r || !r.decision) return;
+        var d = r.decision;
+        state.records.push({ id: r.id, title: r.title, stamp: r.stamp, md: r.md, assumptions: [], worry: '',
+          decision: { verdict: map[d.verdict] || d.verdict || 'Go', action: d.action || '', owner: d.owner || '', due: d.due || '', check: d.reviewOn || '' },
+          actionDone: !!r.actionDone, outcome: r.outcome || null });
+      });
+      (p.captures || []).forEach(function (c) { if (c && !c.done) state.jots.push({ id: c.id, text: c.text, stamp: c.stamp }); });
+    } catch (e) {}
+  }
+  function persist() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  /* ---------- Helpers ---------- */
+  function el(tag, attrs) {
+    var n = document.createElement(tag);
+    attrs = attrs || {};
+    Object.keys(attrs).forEach(function (k) {
+      if (k === 'class') n.className = attrs[k]; else n.setAttribute(k, attrs[k]);
+    });
+    for (var i = 2; i < arguments.length; i++) if (arguments[i] != null) n.append(arguments[i]);
+    return n;
+  }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function dkey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function stamp(d) { return dkey(d) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function short(s, n) { s = (s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 3) + '...' : s; }
+  function plusDays(iso, n) {
+    var p = iso.split('-');
+    var d = new Date(+p[0], +p[1] - 1, +p[2] + n);
+    return dkey(d);
+  }
+  var seq = 0;
+  function gid(p) { seq += 1; return p + seq; }
+
+  var toastTimer;
+  function toast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.hidden = true; }, 2600);
+  }
+  function copyText(text, btn, source) {
+    var label = btn.textContent;
+    function done(m) { btn.textContent = m; setTimeout(function () { btn.textContent = label; }, 1600); }
+    function fb() {
+      if (source) {
+        var r = document.createRange(); r.selectNodeContents(source);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        done('Selected, tap Copy');
+      } else done('Copy not available');
+    }
+    try { navigator.clipboard.writeText(text).then(function () { done('Copied'); }, fb); } catch (e) { fb(); }
+  }
+  function armDelete(btn, fn) {
+    var armed = false, t;
+    btn.addEventListener('click', function () {
+      if (!armed) { armed = true; btn.textContent = 'Tap again to delete'; t = setTimeout(function () { armed = false; btn.textContent = 'Delete'; }, 3000); }
+      else { clearTimeout(t); fn(); }
+    });
+  }
+  function chipGroup(opts, current, onPick, cls) {
+    var name = gid('g');
+    var wrap = el('div', { class: 'chips ' + (cls || ''), role: 'radiogroup' });
+    opts.forEach(function (o, i) {
+      var input = el('input', { type: 'radio', name: name, id: name + '-' + i, value: o });
+      if (o === current) input.checked = true;
+      input.addEventListener('change', function () { onPick(o); });
+      wrap.append(el('label', { class: 'chip', for: name + '-' + i }, input, el('span', {}, o)));
+    });
+    return wrap;
+  }
+  function textField(label, value, onInput, ph, kind) {
+    var id = gid('f');
+    var c = kind === 'input' ? el('input', { type: 'text', id: id }) : el('textarea', { id: id });
+    if (ph) c.setAttribute('placeholder', ph);
+    c.value = value || '';
+    c.addEventListener('input', function () { onInput(c.value); });
+    return { node: el('div', { class: 'field' }, el('label', { class: 'q', for: id }, label), c), control: c };
+  }
+
+  /* ---------- Status ---------- */
+  function status(r) {
+    var today = dkey(new Date());
+    var d = r.decision || {};
+    if (r.outcome) return { label: 'Reviewed', cls: '', rank: 4 };
+    var live = !HALT[d.verdict];
+    if (live && d.action && !r.actionDone && d.due && d.due < today) return { label: 'Overdue', cls: 'hot', rank: 0 };
+    if (live && d.check && d.check <= today) return { label: 'Check back', cls: 'hot', rank: 0 };
+    if (live && d.action && !r.actionDone) return { label: 'Next step open', cls: 'live', rank: 1 };
+    if (r.actionDone) return { label: 'Step done', cls: '', rank: 2 };
+    return { label: d.verdict || 'Logged', cls: '', rank: 3 };
+  }
+
+  /* ---------- Today screen ---------- */
+  function renderToday() {
+    clearInterval(timer);
+    flow = null;
+    app.replaceChildren();
+    var root = el('div', { class: 'stack' });
+
+    var head = el('div', { class: 'stack tight' },
+      el('span', { class: 'eyebrow' }, 'Decision Desk / ' + new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })),
+      el('h1', {}, 'Lead, Manage, Coach'),
+      el('p', { class: 'lede' }, 'Slow down before a big call. Pick the discipline, answer a few plain questions, then choose your next step.'));
+    root.append(head);
+
+    var go = el('button', { class: 'btn', type: 'button' }, 'New decision');
+    go.addEventListener('click', function () { startFlow(null); });
+    root.append(go);
+
+    var row = el('div', { class: 'disc-row' });
+    Object.keys(DISC).forEach(function (k) {
+      var n = state.records.filter(function (r) { return r.discipline === k && status(r).rank <= 1; }).length;
+      var t = el('button', { class: 'tile', type: 'button', 'aria-pressed': filterDisc === k ? 'true' : 'false', 'data-d': k },
+        el('span', { class: 'l' }, k), el('span', { class: 's' }, DISC[k].line), el('span', { class: 'n' }, n ? n + ' open' : 'none open'));
+      t.addEventListener('click', function () { filterDisc = filterDisc === k ? '' : k; renderToday(); });
+      row.append(t);
+    });
+    root.append(row);
+
+    if (state.draft) {
+      var dt = short(state.draft.data.decision, 60) || 'Untitled';
+      var cont = el('button', { class: 'btn ghost small', type: 'button' }, 'Continue draft');
+      cont.addEventListener('click', function () { resumeFlow(); });
+      var drop = el('button', { class: 'btn danger small', type: 'button' }, 'Discard draft');
+      drop.addEventListener('click', function () { state.draft = null; persist(); renderToday(); });
+      root.append(el('div', { class: 'banner warn' }, el('span', { class: 'lab' }, 'Unfinished'), el('strong', {}, dt), el('div', { class: 'actions', style: 'margin-top:8px' }, cont, drop)));
+    }
+
+    var recs = state.records.filter(function (r) { return !filterDisc || r.discipline === filterDisc; }).sort(function (a, b) {
+      var sa = status(a).rank, sb = status(b).rank;
+      if (sa !== sb) return sa - sb;
+      return (a.decision.due || '9999') < (b.decision.due || '9999') ? -1 : 1;
+    });
+    var hot = recs.filter(function (r) { return status(r).rank === 0; }).length;
+    var open = recs.filter(function (r) { return status(r).rank === 1; }).length;
+
+    root.append(el('h3', {}, filterDisc ? filterDisc + ' decisions' : 'Your decisions'));
+    if (recs.length) {
+      root.append(el('div', { class: 'banner' }, el('span', { class: 'lab' }, hot ? 'Needs you now' : 'Nothing overdue'), el('strong', {}, hot + ' due, ' + open + ' with a next step open')));
+      var list = el('div', { class: 'stack tight' });
+      recs.forEach(function (r) { list.append(recordCard(r)); });
+      root.append(list);
+    } else {
+      root.append(el('p', { class: 'empty' }, filterDisc && state.records.length ? 'No ' + filterDisc + ' decisions yet. Tap the tile again to see all.' : 'Nothing here yet. Tap New decision to work through your first one. This is what a finished one looks like:'));
+      root.append(el('div', { class: 'card example' },
+        el('div', { class: 'pills' }, el('span', { class: 'pill' }, 'EXAMPLE'), el('span', { class: 'pill' }, 'Lead'), el('span', { class: 'pill live' }, 'Test first')),
+        el('strong', {}, 'Open a regional lead-share program'),
+        el('div', { class: 'next' }, el('b', {}, 'Next step: '), 'Ask 4 franchisees for their open technician hours this month. Due Friday. Check back in 2 weeks.')));
+    }
+
+    /* Jot */
+    var jotField = textField('Jot a thought, judge it later', '', function () {}, 'Say it or type it. Do not edit or evaluate.', 'area');
+    var jotBtn = el('button', { class: 'btn ghost small', type: 'button' }, 'Save thought');
+    jotBtn.addEventListener('click', function () {
+      var v = jotField.control.value.trim();
+      if (!v) { toast('Type a thought first.'); return; }
+      state.jots.unshift({ id: uid(), text: v, stamp: stamp(new Date()) });
+      persist(); renderToday(); toast('Saved. Review it when you are ready.');
+    });
+    var jots = el('div', { class: 'stack tight' });
+    state.jots.forEach(function (j) {
+      var mk = el('button', { class: 'btn small', type: 'button' }, 'Make it a decision');
+      mk.addEventListener('click', function () { startFlow(j); });
+      var del = el('button', { class: 'btn danger small', type: 'button' }, 'Delete');
+      armDelete(del, function () { state.jots = state.jots.filter(function (x) { return x.id !== j.id; }); persist(); renderToday(); });
+      jots.append(el('div', { class: 'jot' }, el('span', { class: 'mono' }, j.stamp), el('div', { class: 'text' }, j.text), el('div', { class: 'actions' }, mk, del)));
+    });
+    root.append(el('div', { class: 'card' }, jotField.node, el('div', { class: 'actions' }, jotBtn)), jots);
+
+    /* Help */
+    var steps = el('ol', { class: 'steps' },
+      el('li', {}, el('b', {}, 'Pick the discipline. '), el('span', {}, 'Lead sets direction. Manage runs the results. Coach develops a person.')),
+      el('li', {}, el('b', {}, 'Describe it. '), el('span', {}, 'One sentence about the decision.')),
+      el('li', {}, el('b', {}, 'Test what you are assuming. '), el('span', {}, 'Check the facts you are taking for granted.')),
+      el('li', {}, el('b', {}, 'Imagine it failed. '), el('span', {}, 'After a short pause, work out why.')),
+      el('li', {}, el('b', {}, 'Decide. '), el('span', {}, 'Go, test first, wait or stop, with one next step and a date.')),
+      el('li', {}, el('b', {}, 'Check back. '), el('span', {}, 'Compare what happened with what you expected.'))
+    );
+    root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'How it works')),
+      el('div', { class: 'body' }, steps, el('p', { class: 'hint' }, 'Guiding idea: an idea is only an impression until you have checked it, and your effort belongs on what is in your control.'),
+        el('p', { class: 'hint' }, 'Saved decisions stay on this device. To share one with your team, open it and tap Copy summary.'))));
+
+    app.append(root);
+  }
+
+  function recordCard(r) {
+    var s = status(r), d = r.decision || {};
+    var body = el('div', { class: 'body' });
+    var dl = el('dl', { class: 'sum' });
+    [['Type', r.discipline || '-'], ['Decision', d.verdict || '-'], ['Next step', d.action || '-'], ['Who', d.owner || '-'], ['Do by', d.due || '-'], ['Check back', d.check || '-']].forEach(function (p) {
+      dl.append(el('dt', {}, p[0]), el('dd', {}, p[1]));
+    });
+    body.append(dl);
+    if (r.assumptions && r.assumptions.length) {
+      var al = el('dl', { class: 'sum' });
+      r.assumptions.forEach(function (a) { al.append(el('dt', {}, a.verdict || ''), el('dd', {}, a.text)); });
+      body.append(el('h3', {}, 'What you assumed'), al);
+    }
+    if (d.action && !HALT[d.verdict]) {
+      var done = el('button', { class: 'btn small' + (r.actionDone ? ' ghost' : ''), type: 'button' }, r.actionDone ? 'Reopen next step' : 'Mark next step done');
+      done.addEventListener('click', function () { r.actionDone = !r.actionDone; persist(); renderToday(); });
+      body.append(el('div', { class: 'actions' }, done));
+    }
+    if (r.outcome) {
+      body.append(el('div', { class: 'banner' }, el('span', { class: 'lab' }, 'Result: ' + r.outcome.call), el('span', {}, r.outcome.note || '(no note)')));
+    } else if (!HALT[d.verdict]) {
+      var call = 'Worked', note = '';
+      var nf = textField('How did it turn out compared with what you expected?', '', function (v) { note = v; }, 'What happened, and what surprised you?');
+      var cg = chipGroup(['It worked', 'Partly', 'It did not'], '', function (v) { call = v; });
+      var log = el('button', { class: 'btn small', type: 'button' }, 'Log result');
+      log.addEventListener('click', function () {
+        if (!cg.querySelector('input:checked')) { toast('Pick how it turned out.'); return; }
+        r.outcome = { call: call, note: note.trim(), stamp: stamp(new Date()) };
+        persist(); renderToday(); toast('Logged. If it went badly, revisit the assumptions.');
+      });
+      body.append(el('h3', {}, 'Check back'), nf.node, cg, el('div', { class: 'actions' }, log));
+    }
+    var pre = el('pre', {}, r.md);
+    var copy = el('button', { class: 'btn ghost small', type: 'button' }, 'Copy summary');
+    copy.addEventListener('click', function () {
+      var t = r.md + (r.outcome ? '\n\n## Result\n' + r.outcome.call + (r.outcome.note ? ': ' + r.outcome.note : '') : '');
+      copyText(t, copy, pre);
+    });
+    var del = el('button', { class: 'btn danger small', type: 'button' }, 'Delete');
+    armDelete(del, function () { state.records = state.records.filter(function (x) { return x.id !== r.id; }); persist(); renderToday(); });
+    body.append(pre, el('div', { class: 'actions' }, copy, del));
+
+    var nextLine = (d.action && !HALT[d.verdict]) ? el('div', { class: 'next' }, el('b', {}, 'Next: '), d.action + (d.due ? ' (by ' + d.due + ')' : '')) : null;
+    return el('details', { class: 'entry' },
+      el('summary', {}, el('span', { class: 't' }, r.title),
+        el('span', { class: 'pills' }, r.discipline ? el('span', { class: 'mark', title: r.discipline, 'data-d': r.discipline }, DISC[r.discipline] ? DISC[r.discipline].m : '') : null, el('span', { class: 'pill ' + s.cls }, s.label), el('span', { class: 'pill' }, d.verdict || ''), el('span', { class: 'mono' }, r.stamp)),
+        nextLine),
+      body);
+  }
+
+  /* ---------- Guided flow ---------- */
+  function blankData() {
+    return { discipline: filterDisc || '', decision: '', assumptions: [{ text: '' }, { text: '' }, { text: '' }], worry: '', fa: {}, control: '', change: '', verdict: '', action: '', owner: '', due: '', check: '' };
+  }
+  function startFlow(jot) {
+    var data = blankData();
+    if (jot) data.decision = jot.text;
+    flow = { data: data, i: 0, paused: false, jot: jot ? jot.id : null, more: 1 };
+    renderFlow();
+  }
+  function resumeFlow() {
+    var d = state.draft;
+    flow = { data: d.data, i: d.i || 0, paused: !!d.paused, jot: d.jot || null, more: 1 };
+    if (d.data.discipline === undefined) { d.data.discipline = ''; flow.i = (d.i || 0) + 1; }
+    for (var k = 1; k < 3; k++) if (flow.data.assumptions[k] && flow.data.assumptions[k].text) flow.more = k + 1;
+    renderFlow();
+  }
+  function saveDraft() {
+    if (!flow) return;
+    state.draft = { data: flow.data, i: flow.i, paused: flow.paused, jot: flow.jot };
+    persist();
+  }
+  function stepList() {
+    var a = flow.data.assumptions.filter(function (x) { return x.text.trim(); });
+    var s = ['kind', 'decision', 'assume'];
+    a.forEach(function (_, k) { s.push('test' + k); });
+    return s.concat(['worry', 'failure', 'decide']);
+  }
+
+  function renderFlow() {
+    clearInterval(timer);
+    app.replaceChildren();
+    var steps = stepList();
+    if (flow.i >= steps.length) flow.i = steps.length - 1;
+    var step = steps[flow.i];
+    var D = flow.data;
+    var pausing = step === 'failure' && !flow.paused;
+
+    var cancel = el('button', { class: 'linkbtn', type: 'button' }, 'Save and exit');
+    cancel.addEventListener('click', function () { saveDraft(); renderToday(); });
+    var pct = Math.round(((flow.i + 1) / steps.length) * 100);
+    var bar = el('div', { class: 'bar' }, el('i', { style: 'width:' + pct + '%' }));
+    app.append(el('div', { class: 'progress' },
+      el('div', { class: 'row' }, el('span', { class: 'mono' }, 'Step ' + (flow.i + 1) + ' of ' + steps.length), cancel), bar));
+
+    var main = el('div', { class: 'stack' });
+    var next = el('button', { class: 'btn', type: 'button' }, flow.i === steps.length - 1 ? 'Save decision' : 'Next');
+    var back = el('button', { class: 'btn ghost', type: 'button' }, 'Back');
+
+    var DC = DISC[D.discipline] || { ph: 'Example: Should we open a regional lead-share program?', act: 'Example: Ask four franchisees for their open technician hours this month.' };
+    if (step === 'kind') {
+      main.append(el('h2', {}, 'What kind of decision is this?'), el('p', { class: 'hint' }, 'Pick the one that fits best. It shapes your examples and sorts your list.'));
+      var kn = gid('k'), kw = el('div', { class: 'chips col', role: 'radiogroup' });
+      Object.keys(DISC).forEach(function (k, i) {
+        var inp = el('input', { type: 'radio', name: kn, id: kn + i, value: k });
+        if (D.discipline === k) inp.checked = true;
+        inp.addEventListener('change', function () { D.discipline = k; saveDraft(); });
+        kw.append(el('label', { class: 'chip disc', for: kn + i, 'data-d': k }, inp, el('span', {}, el('strong', {}, k + ': ' + DISC[k].line), el('small', {}, DISC[k].desc))));
+      });
+      main.append(kw);
+    } else if (step === 'decision') {
+      main.append(el('h2', {}, 'What decision are you facing?'),
+        el('p', { class: 'hint' }, 'One or two sentences is enough.'));
+      var f = textField('Describe it', D.decision, function (v) { D.decision = v; saveDraft(); }, DC.ph);
+      main.append(f.node);
+    } else if (step === 'assume') {
+      main.append(el('h2', {}, 'What are you taking for granted?'),
+        el('p', { class: 'hint' }, 'List facts you are treating as true without having checked them. Start with one.'));
+      var ph = ['Example: Franchisees have spare technician capacity.', 'Example: Customers will accept a different brand showing up.', 'Example: Lead volume stays steady all year.'];
+      for (var k = 0; k < 3; k++) {
+        (function (k) {
+          if (k >= flow.more && !D.assumptions[k].text) return;
+          main.append(textField('Assumption ' + (k + 1), D.assumptions[k].text, function (v) { D.assumptions[k].text = v; saveDraft(); }, ph[k], 'input').node);
+        })(k);
+      }
+      if (flow.more < 3) {
+        var add = el('button', { class: 'btn ghost small', type: 'button' }, 'Add another');
+        add.addEventListener('click', function () { flow.more += 1; renderFlow(); });
+        main.append(add);
+      }
+    } else if (step.indexOf('test') === 0) {
+      var idx = +step.slice(4);
+      var items = D.assumptions.filter(function (x) { return x.text.trim(); });
+      var a = items[idx];
+      main.append(el('span', { class: 'eyebrow' }, 'Assumption ' + (idx + 1) + ' of ' + items.length),
+        el('h2', {}, a.text),
+        el('p', { class: 'hint' }, 'Is this really true, or just what you believe? Answer in your own words.'));
+      TESTS.forEach(function (t) {
+        main.append(textField(t.q, a[t.k], function (v) { a[t.k] = v; saveDraft(); }, t.ph).node);
+      });
+      main.append(el('div', { class: 'field' }, el('span', { class: 'lab' }, 'Your verdict'),
+        chipGroup(CHECK, a.verdict, function (v) { a.verdict = v; saveDraft(); })));
+    } else if (step === 'worry') {
+      main.append(el('h2', {}, 'Picture it six months from now. It did not work.'),
+        el('p', { class: 'hint' }, 'What is the most likely reason?'),
+        chipGroup(Object.keys(WORRIES), D.worry, function (v) { D.worry = v; saveDraft(); }, 'col warnset'));
+    } else if (step === 'failure') {
+      if (pausing) {
+        var count = el('div', { class: 'count', 'aria-live': 'polite' }, '5');
+        var pbar = el('i', {});
+        main.append(el('div', { class: 'card pause' }, el('span', { class: 'lab' }, 'Pause'), count,
+          el('p', {}, 'Assume it has already failed. Hold that thought.'), el('div', { class: 'bar' }, pbar)));
+        var left = 5;
+        setTimeout(function () { pbar.style.width = '100%'; }, 30);
+        timer = setInterval(function () {
+          left -= 1;
+          count.textContent = String(Math.max(left, 0));
+          if (left <= 0) { clearInterval(timer); flow.paused = true; saveDraft(); renderFlow(); }
+        }, 1000);
+      } else {
+        main.append(el('span', { class: 'tag eyebrow' }, D.worry), el('h2', {}, 'Why did it fail?'));
+        (WORRIES[D.worry] || []).forEach(function (q) {
+          main.append(textField(q.q, D.fa[q.k], function (v) { D.fa[q.k] = v; saveDraft(); }, '').node);
+        });
+        main.append(textField('What is in your control here, and what is not?', D.control, function (v) { D.control = v; saveDraft(); }, 'Focus your effort on the first part. Prepare calmly for the second.').node,
+          textField('What will you change in the plan so this does not happen?', D.change, function (v) { D.change = v; saveDraft(); }, '').node);
+      }
+    } else if (step === 'decide') {
+      main.append(el('h2', {}, 'What will you do?'), el('p', { class: 'hint' }, 'Pick one, then give it one next step and a date.'),
+        chipGroup(VERDICTS, D.verdict, function (v) { D.verdict = v; saveDraft(); }, 'warnset'));
+      main.append(textField('Your next step', D.action, function (v) { D.action = v; saveDraft(); }, DC.act, 'input').node);
+      main.append(textField('Who owns it (optional)', D.owner, function (v) { D.owner = v; saveDraft(); }, 'Name or team', 'input').node);
+      var did = gid('f'), cid = gid('f');
+      var due = el('input', { type: 'date', id: did });
+      var chk = el('input', { type: 'date', id: cid });
+      due.value = D.due || ''; chk.value = D.check || '';
+      due.addEventListener('change', function () {
+        D.due = due.value;
+        if (due.value && !D.check) { D.check = plusDays(due.value, 14); chk.value = D.check; }
+        saveDraft();
+      });
+      chk.addEventListener('change', function () { D.check = chk.value; saveDraft(); });
+      main.append(el('div', { class: 'two' },
+        el('div', { class: 'field' }, el('label', { class: 'q', for: did }, 'Do it by'), due),
+        el('div', { class: 'field' }, el('label', { class: 'q', for: cid }, 'Check back on'), chk)));
+    }
+    app.append(main);
+
+    function valid() {
+      if (step === 'kind') return D.discipline ? '' : 'Pick Lead, Manage or Coach.';
+      if (step === 'decision') return D.decision.trim() ? '' : 'Describe the decision first.';
+      if (step === 'assume') return D.assumptions.some(function (x) { return x.text.trim(); }) ? '' : 'Add at least one assumption.';
+      if (step.indexOf('test') === 0) {
+        var it = D.assumptions.filter(function (x) { return x.text.trim(); })[+step.slice(4)];
+        return it.verdict ? '' : 'Pick a verdict for this assumption.';
+      }
+      if (step === 'worry') return D.worry ? '' : 'Pick the most likely reason.';
+      if (step === 'decide') {
+        if (!D.verdict) return 'Pick what you will do.';
+        if (!HALT[D.verdict]) {
+          if (!D.action.trim()) return 'Write one next step.';
+          if (!D.due) return 'Choose a do-by date.';
+          if (!D.check) return 'Choose a check-back date.';
+        }
+      }
+      return '';
+    }
+    back.addEventListener('click', function () {
+      if (flow.i === 0) { saveDraft(); renderToday(); return; }
+      flow.i -= 1; saveDraft(); renderFlow(); window.scrollTo(0, 0);
+    });
+    next.addEventListener('click', function () {
+      var msg = valid();
+      if (msg) { toast(msg); return; }
+      if (flow.i === steps.length - 1) { finish(); return; }
+      flow.i += 1; saveDraft(); renderFlow(); window.scrollTo(0, 0);
+    });
+    if (pausing) next.disabled = true;
+    app.append(el('div', { class: 'flowbar' }, el('div', {}, back, next)));
+  }
+
+  function finish() {
+    var D = flow.data, now = new Date();
+    var items = D.assumptions.filter(function (x) { return x.text.trim(); });
+    var md = '# Decision: ' + D.decision.trim() + '\n' + D.discipline + ' / ' + stamp(now) + '\n\n## What we assumed\n';
+    items.forEach(function (a) {
+      md += '- ' + a.text.trim() + ' [' + a.verdict + ']\n';
+      if (a.evidence && a.evidence.trim()) md += '  Evidence: ' + a.evidence.trim() + '\n';
+      if (a.history && a.history.trim()) md += '  Track record: ' + a.history.trim() + '\n';
+      if (a.motive && a.motive.trim()) md += '  Motive: ' + a.motive.trim() + '\n';
+    });
+    md += '\n## If it failed: ' + D.worry + '\n';
+    (WORRIES[D.worry] || []).forEach(function (q) { md += '- ' + q.q + '\n  ' + ((D.fa[q.k] || '').trim() || '(no answer)') + '\n'; });
+    md += 'In our control / not: ' + (D.control.trim() || '(no answer)') + '\nPlan change: ' + (D.change.trim() || '(none)') + '\n';
+    md += '\n## Decision\nVerdict: ' + D.verdict + '\nNext step: ' + (D.action.trim() || '-') + '\nWho: ' + (D.owner.trim() || '-') + '\nDo by: ' + (D.due || '-') + '\nCheck back: ' + (D.check || '-');
+    state.records.unshift({
+      id: uid(), discipline: D.discipline, title: short(D.decision, 80), stamp: stamp(now), md: md,
+      assumptions: items.map(function (a) { return { text: a.text.trim(), verdict: a.verdict }; }), worry: D.worry,
+      decision: { verdict: D.verdict, action: D.action.trim(), owner: D.owner.trim(), due: D.due, check: D.check },
+      actionDone: false, outcome: null
+    });
+    if (flow.jot) state.jots = state.jots.filter(function (j) { return j.id !== flow.jot; });
+    state.draft = null;
+    persist();
+    renderToday();
+    toast('Saved. Your next step is on the list.');
+    window.scrollTo(0, 0);
+  }
+
+  load();
+  renderToday();
+})();
+</script>
+<script>
+if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+}
+</script>
+</body>
+</html>
