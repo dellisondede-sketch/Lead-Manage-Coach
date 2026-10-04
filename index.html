@@ -335,7 +335,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     var head = el('div', { class: 'stack tight' },
       el('span', { class: 'eyebrow' }, 'Decision Desk / ' + new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })),
       el('h1', {}, 'Lead, Manage, Coach'),
-      el('p', { class: 'lede' }, 'Slow down before a big call. Pick the discipline, answer a few plain questions, then choose your next step.'));
+      el('p', { class: 'lede' }, 'Slow down before a big call. Pick the discipline, answer five critical questions, see who is affected, then choose your first step.'));
     root.append(head);
 
     var go = el('button', { class: 'btn', type: 'button' }, 'New decision');
@@ -405,10 +405,11 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     /* Help */
     var steps = el('ol', { class: 'steps' },
       el('li', {}, el('b', {}, 'Pick the discipline. '), el('span', {}, 'Lead sets direction. Manage runs the results. Coach develops a person.')),
-      el('li', {}, el('b', {}, 'Describe it. '), el('span', {}, 'One sentence about the decision.')),
-      el('li', {}, el('b', {}, 'Test what you are assuming. '), el('span', {}, 'Check the facts you are taking for granted.')),
-      el('li', {}, el('b', {}, 'Imagine it failed. '), el('span', {}, 'After a short pause, work out why.')),
-      el('li', {}, el('b', {}, 'Decide. '), el('span', {}, 'Go, test first, wait or stop, with one next step and a date.')),
+      el('li', {}, el('b', {}, 'Why. '), el('span', {}, 'Name the decision, why now, and the cost of doing nothing.')),
+      el('li', {}, el('b', {}, 'Five critical questions. '), el('span', {}, 'Answer each, then say whether you know it, believe it, or do not know.')),
+      el('li', {}, el('b', {}, 'Who is affected. '), el('span', {}, 'By the decision, and by how it turns out.')),
+      el('li', {}, el('b', {}, 'What are we missing. '), el('span', {}, 'After a short pause, look for blind spots.')),
+      el('li', {}, el('b', {}, 'How and when. '), el('span', {}, 'The plan, a first step, an owner and a date.')),
       el('li', {}, el('b', {}, 'Check back. '), el('span', {}, 'Compare what happened with what you expected.'))
     );
     root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'How it works')),
@@ -422,15 +423,12 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     var s = status(r), d = r.decision || {};
     var body = el('div', { class: 'body' });
     var dl = el('dl', { class: 'sum' });
-    [['Type', r.discipline || '-'], ['Decision', d.verdict || '-'], ['Next step', d.action || '-'], ['Who', d.owner || '-'], ['Do by', d.due || '-'], ['Check back', d.check || '-']].forEach(function (p) {
+    [['Type', r.discipline || '-']].concat(r.why ? [['Why', r.why]] : [],
+      r.who && r.who.length ? [['Affects', r.who.map(function (w) { return w.name; }).join(', ')]] : [],
+      [['Decision', d.verdict || '-'], ['First step', d.action || '-'], ['Owner', d.owner || '-'], ['Do by', d.due || '-'], ['Check back', d.check || '-']]).forEach(function (p) {
       dl.append(el('dt', {}, p[0]), el('dd', {}, p[1]));
     });
     body.append(dl);
-    if (r.assumptions && r.assumptions.length) {
-      var al = el('dl', { class: 'sum' });
-      r.assumptions.forEach(function (a) { al.append(el('dt', {}, a.verdict || ''), el('dd', {}, a.text)); });
-      body.append(el('h3', {}, 'What you assumed'), al);
-    }
     if (d.action && !HALT[d.verdict]) {
       var done = el('button', { class: 'btn small' + (r.actionDone ? ' ghost' : ''), type: 'button' }, r.actionDone ? 'Reopen next step' : 'Mark next step done');
       done.addEventListener('click', function () { r.actionDone = !r.actionDone; persist(); renderToday(); });
@@ -446,7 +444,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       log.addEventListener('click', function () {
         if (!cg.querySelector('input:checked')) { toast('Pick how it turned out.'); return; }
         r.outcome = { call: call, note: note.trim(), stamp: stamp(new Date()) };
-        persist(); renderToday(); toast('Logged. If it went badly, revisit the assumptions.');
+        persist(); renderToday(); toast('Logged. If it went badly, look again at the answers you were unsure about.');
       });
       body.append(el('h3', {}, 'Check back'), nf.node, cg, el('div', { class: 'actions' }, log));
     }
@@ -463,26 +461,53 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     var nextLine = (d.action && !HALT[d.verdict]) ? el('div', { class: 'next' }, el('b', {}, 'Next: '), d.action + (d.due ? ' (by ' + d.due + ')' : '')) : null;
     return el('details', { class: 'entry' },
       el('summary', {}, el('span', { class: 't' }, r.title),
-        el('span', { class: 'pills' }, r.discipline ? el('span', { class: 'mark', title: r.discipline, 'data-d': r.discipline }, DISC[r.discipline] ? DISC[r.discipline].m : '') : null, el('span', { class: 'pill ' + s.cls }, s.label), el('span', { class: 'pill' }, d.verdict || ''), el('span', { class: 'mono' }, r.stamp)),
+        el('span', { class: 'pills' }, r.discipline ? el('span', { class: 'mark', title: r.discipline, 'data-d': r.discipline }, DISC[r.discipline] ? DISC[r.discipline].m : '') : null, el('span', { class: 'pill ' + s.cls }, s.label), el('span', { class: 'pill' }, d.verdict || ''), assumedCount(r) ? el('span', { class: 'pill hot' }, assumedCount(r) + ' not verified') : null, el('span', { class: 'mono' }, r.stamp)),
         nextLine),
       body);
   }
 
   /* ---------- Guided flow ---------- */
+  var QS = {
+    Lead: [
+      { t: 'Direction', q: 'What outcome are we committing to, and why does it matter now?', ph: 'Example: Be the first call for regional fleet accounts within 12 months.' },
+      { t: 'Premise', q: 'What has to be true for this direction to be right, and what have we actually verified?', ph: 'Example: Fleet managers want one vendor. We have spoken to two, not ten.' },
+      { t: 'Alignment', q: 'Who has to believe in this for it to work, and do they?', ph: 'Example: Franchisees must invest in training. Not yet asked.' },
+      { t: 'Trade-off', q: 'What are we choosing not to do?', ph: 'Example: We pause the retail push this year.' },
+      { t: 'Exit', q: 'What would make us change course, and how will we know?', ph: 'Example: Fewer than 5 signed accounts by month 6.' }
+    ],
+    Manage: [
+      { t: 'Measure', q: 'Which number tells us this is working, and what is it today?', ph: 'Example: Booked jobs per technician per week. Today it is 11.' },
+      { t: 'Variance', q: 'What does the data show versus what we expected?', ph: 'Example: We expected 14. Three locations are under 9.' },
+      { t: 'Root cause', q: 'Is the root cause a system, a process, or a person?', ph: 'Example: Process. Dispatch happens after 10am at the weak sites.' },
+      { t: 'Correction', q: 'What is the smallest correction that fixes the cause?', ph: 'Example: Dispatch by 8am using the shared board.' },
+      { t: 'Ownership', q: 'Who owns it, by when, and when do we check?', ph: 'Example: Site leads, two weeks, review on the 15th.' }
+    ],
+    Coach: [
+      { t: 'Facts', q: 'What exactly did I see or measure first-hand?', ph: 'Example: Three late arrivals in two weeks, noted on the schedule.' },
+      { t: 'Gap type', q: 'Is this a skill gap, a will gap, or a clarity gap?', ph: 'Example: Likely clarity. Start time was never written down.' },
+      { t: 'Clarity', q: 'What have I done to make the expectation clear?', ph: 'Example: Said it once in a meeting. Nothing in writing.' },
+      { t: 'Ownership', q: 'What is theirs to own, and what is mine?', ph: 'Example: Theirs: arriving on time. Mine: a clear standard and feedback.' },
+      { t: 'Commitment', q: 'What is the one commitment they will make, and when do we follow up?', ph: 'Example: On site by 7:30 every day. Check in Friday.' }
+    ]
+  };
+  var CONF = ['I know this', 'I believe this', 'I do not know'];
+  var STOIC = 'Stay with what is in your control. Separate what you saw from what you assume.';
+  function qsFor(D) { return QS[D.discipline] || QS.Lead; }
   function blankData() {
-    return { discipline: filterDisc || '', decision: '', assumptions: [{ text: '' }, { text: '' }, { text: '' }], worry: '', fa: {}, control: '', change: '', verdict: '', action: '', owner: '', due: '', check: '' };
+    return { discipline: filterDisc || '', decision: '', why: '', nowcost: '', answers: [{}, {}, {}, {}, {}],
+      who: [{ name: '', dec: '', out: '' }, { name: '', dec: '', out: '' }], blind: { missing: '', oppose: '', change: '' },
+      how: { plan: '', measure: '', needs: '' }, verdict: '', action: '', owner: '', due: '', check: '' };
   }
   function startFlow(jot) {
     var data = blankData();
     if (jot) data.decision = jot.text;
-    flow = { data: data, i: 0, paused: false, jot: jot ? jot.id : null, more: 1 };
+    flow = { data: data, i: 0, paused: false, jot: jot ? jot.id : null };
     renderFlow();
   }
   function resumeFlow() {
     var d = state.draft;
-    flow = { data: d.data, i: d.i || 0, paused: !!d.paused, jot: d.jot || null, more: 1 };
-    if (d.data.discipline === undefined) { d.data.discipline = ''; flow.i = (d.i || 0) + 1; }
-    for (var k = 1; k < 3; k++) if (flow.data.assumptions[k] && flow.data.assumptions[k].text) flow.more = k + 1;
+    if (!d || !d.data || !d.data.answers) { state.draft = null; persist(); startFlow(null); toast('The old draft used an earlier format, so we started fresh.'); return; }
+    flow = { data: d.data, i: d.i || 0, paused: !!d.paused, jot: d.jot || null };
     renderFlow();
   }
   function saveDraft() {
@@ -490,12 +515,9 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     state.draft = { data: flow.data, i: flow.i, paused: flow.paused, jot: flow.jot };
     persist();
   }
-  function stepList() {
-    var a = flow.data.assumptions.filter(function (x) { return x.text.trim(); });
-    var s = ['kind', 'decision', 'assume'];
-    a.forEach(function (_, k) { s.push('test' + k); });
-    return s.concat(['worry', 'failure', 'decide']);
-  }
+  function stepList() { return ['kind', 'why', 'q0', 'q1', 'q2', 'q3', 'q4', 'who', 'blind', 'how', 'when']; }
+  function stakeholders(D) { return D.who.filter(function (w) { return w.name.trim(); }); }
+  function assumedCount(r) { return (r.answers || []).filter(function (x) { return x.conf && x.conf !== CONF[0]; }).length; }
 
   function renderFlow() {
     clearInterval(timer);
@@ -504,7 +526,8 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     if (flow.i >= steps.length) flow.i = steps.length - 1;
     var step = steps[flow.i];
     var D = flow.data;
-    var pausing = step === 'failure' && !flow.paused;
+    var pausing = step === 'blind' && !flow.paused;
+    var PH = { Why: 'Phase: WHY', How: 'Phase: HOW', When: 'Phase: WHEN' };
 
     var cancel = el('button', { class: 'linkbtn', type: 'button' }, 'Save and exit');
     cancel.addEventListener('click', function () { saveDraft(); renderToday(); });
@@ -516,10 +539,10 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     var main = el('div', { class: 'stack' });
     var next = el('button', { class: 'btn', type: 'button' }, flow.i === steps.length - 1 ? 'Save decision' : 'Next');
     var back = el('button', { class: 'btn ghost', type: 'button' }, 'Back');
-
     var DC = DISC[D.discipline] || { ph: 'Example: Should we open a regional lead-share program?', act: 'Example: Ask four franchisees for their open technician hours this month.' };
+
     if (step === 'kind') {
-      main.append(el('h2', {}, 'What kind of decision is this?'), el('p', { class: 'hint' }, 'Pick the one that fits best. It shapes your examples and sorts your list.'));
+      main.append(el('h2', {}, 'What kind of decision is this?'), el('p', { class: 'hint' }, 'Pick the one that fits best. It sets your five critical questions and sorts your list.'));
       var kn = gid('k'), kw = el('div', { class: 'chips col', role: 'radiogroup' });
       Object.keys(DISC).forEach(function (k, i) {
         var inp = el('input', { type: 'radio', name: kn, id: kn + i, value: k });
@@ -528,48 +551,39 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
         kw.append(el('label', { class: 'chip disc', for: kn + i, 'data-d': k }, inp, el('span', {}, el('strong', {}, k + ': ' + DISC[k].line), el('small', {}, DISC[k].desc))));
       });
       main.append(kw);
-    } else if (step === 'decision') {
-      main.append(el('h2', {}, 'What decision are you facing?'),
-        el('p', { class: 'hint' }, 'One or two sentences is enough.'));
-      var f = textField('Describe it', D.decision, function (v) { D.decision = v; saveDraft(); }, DC.ph);
-      main.append(f.node);
-    } else if (step === 'assume') {
-      main.append(el('h2', {}, 'What are you taking for granted?'),
-        el('p', { class: 'hint' }, 'List facts you are treating as true without having checked them. Start with one.'));
-      var ph = ['Example: Franchisees have spare technician capacity.', 'Example: Customers will accept a different brand showing up.', 'Example: Lead volume stays steady all year.'];
-      for (var k = 0; k < 3; k++) {
-        (function (k) {
-          if (k >= flow.more && !D.assumptions[k].text) return;
-          main.append(textField('Assumption ' + (k + 1), D.assumptions[k].text, function (v) { D.assumptions[k].text = v; saveDraft(); }, ph[k], 'input').node);
-        })(k);
-      }
-      if (flow.more < 3) {
-        var add = el('button', { class: 'btn ghost small', type: 'button' }, 'Add another');
-        add.addEventListener('click', function () { flow.more += 1; renderFlow(); });
-        main.append(add);
-      }
-    } else if (step.indexOf('test') === 0) {
-      var idx = +step.slice(4);
-      var items = D.assumptions.filter(function (x) { return x.text.trim(); });
-      var a = items[idx];
-      main.append(el('span', { class: 'eyebrow' }, 'Assumption ' + (idx + 1) + ' of ' + items.length),
-        el('h2', {}, a.text),
-        el('p', { class: 'hint' }, 'Is this really true, or just what you believe? Answer in your own words.'));
-      TESTS.forEach(function (t) {
-        main.append(textField(t.q, a[t.k], function (v) { a[t.k] = v; saveDraft(); }, t.ph).node);
+    } else if (step === 'why') {
+      main.append(el('span', { class: 'eyebrow' }, PH.Why), el('h2', {}, 'Why are we deciding this?'),
+        el('p', { class: 'hint' }, 'Name the decision, then the reason it matters now.'));
+      main.append(textField('The decision', D.decision, function (v) { D.decision = v; saveDraft(); }, DC.ph).node,
+        textField('Why does this matter now?', D.why, function (v) { D.why = v; saveDraft(); }, 'Example: A competitor is signing the same accounts this quarter.').node,
+        textField('What happens if we do nothing?', D.nowcost, function (v) { D.nowcost = v; saveDraft(); }, 'Example: We lose two accounts by spring.').node);
+    } else if (step.charAt(0) === 'q') {
+      var qi = +step.slice(1), Q = qsFor(D)[qi], A = D.answers[qi];
+      main.append(el('span', { class: 'eyebrow' }, D.discipline + ' / question ' + (qi + 1) + ' of 5 / ' + Q.t), el('h2', {}, Q.q),
+        el('p', { class: 'hint' }, STOIC));
+      main.append(textField('Your answer', A.a, function (v) { A.a = v; saveDraft(); }, Q.ph).node);
+      main.append(el('div', { class: 'field' }, el('span', { class: 'lab' }, 'How sure are you?'),
+        chipGroup(CONF, A.conf, function (v) { A.conf = v; saveDraft(); })));
+    } else if (step === 'who') {
+      main.append(el('h2', {}, 'Who is affected?'),
+        el('p', { class: 'hint' }, 'People, teams or customers touched by the decision itself, and by how it turns out. Start with the people you would not want to surprise.'));
+      D.who.forEach(function (w, k) {
+        main.append(el('div', { class: 'card stack tight' },
+          textField('Who (person or group) ' + (k + 1), w.name, function (v) { w.name = v; saveDraft(); }, 'Example: Franchise owners in the north region', 'input').node,
+          textField('How does the decision affect them?', w.dec, function (v) { w.dec = v; saveDraft(); }, 'Example: They must change their dispatch routine.').node,
+          textField('How does the outcome affect them?', w.out, function (v) { w.out = v; saveDraft(); }, 'Example: If it works, more booked jobs. If not, lost goodwill.').node));
       });
-      main.append(el('div', { class: 'field' }, el('span', { class: 'lab' }, 'Your verdict'),
-        chipGroup(CHECK, a.verdict, function (v) { a.verdict = v; saveDraft(); })));
-    } else if (step === 'worry') {
-      main.append(el('h2', {}, 'Picture it six months from now. It did not work.'),
-        el('p', { class: 'hint' }, 'What is the most likely reason?'),
-        chipGroup(Object.keys(WORRIES), D.worry, function (v) { D.worry = v; saveDraft(); }, 'col warnset'));
-    } else if (step === 'failure') {
+      if (D.who.length < 5) {
+        var addw = el('button', { class: 'btn ghost small', type: 'button' }, 'Add another person or group');
+        addw.addEventListener('click', function () { D.who.push({ name: '', dec: '', out: '' }); saveDraft(); renderFlow(); });
+        main.append(addw);
+      }
+    } else if (step === 'blind') {
       if (pausing) {
         var count = el('div', { class: 'count', 'aria-live': 'polite' }, '5');
         var pbar = el('i', {});
         main.append(el('div', { class: 'card pause' }, el('span', { class: 'lab' }, 'Pause'), count,
-          el('p', {}, 'Assume it has already failed. Hold that thought.'), el('div', { class: 'bar' }, pbar)));
+          el('p', {}, 'You have answered what you could see. Now look for what you cannot.'), el('div', { class: 'bar' }, pbar)));
         var left = 5;
         setTimeout(function () { pbar.style.width = '100%'; }, 30);
         timer = setInterval(function () {
@@ -578,17 +592,22 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
           if (left <= 0) { clearInterval(timer); flow.paused = true; saveDraft(); renderFlow(); }
         }, 1000);
       } else {
-        main.append(el('span', { class: 'tag eyebrow' }, D.worry), el('h2', {}, 'Why did it fail?'));
-        (WORRIES[D.worry] || []).forEach(function (q) {
-          main.append(textField(q.q, D.fa[q.k], function (v) { D.fa[q.k] = v; saveDraft(); }, '').node);
-        });
-        main.append(textField('What is in your control here, and what is not?', D.control, function (v) { D.control = v; saveDraft(); }, 'Focus your effort on the first part. Prepare calmly for the second.').node,
-          textField('What will you change in the plan so this does not happen?', D.change, function (v) { D.change = v; saveDraft(); }, '').node);
+        main.append(el('h2', {}, 'What might we not be considering?'),
+          el('p', { class: 'hint' }, 'A short answer is fine. "I do not know yet" is a useful answer.'));
+        main.append(textField('What information are we missing, and who could tell us?', D.blind.missing, function (v) { D.blind.missing = v; saveDraft(); }, 'Example: We have not asked the technicians who would do the work.').node,
+          textField('What would someone who disagrees with us say?', D.blind.oppose, function (v) { D.blind.oppose = v; saveDraft(); }, 'Example: It is too much change in a busy season.').node,
+          textField('What could change in the next six months that we are not planning for?', D.blind.change, function (v) { D.blind.change = v; saveDraft(); }, 'Example: A supplier price rise, a key person leaving.').node);
       }
-    } else if (step === 'decide') {
-      main.append(el('h2', {}, 'What will you do?'), el('p', { class: 'hint' }, 'Pick one, then give it one next step and a date.'),
+    } else if (step === 'how') {
+      main.append(el('span', { class: 'eyebrow' }, PH.How), el('h2', {}, 'How will we do it?'),
+        el('p', { class: 'hint' }, 'Plain steps, and how you will know it is working.'));
+      main.append(textField('The plan in a few steps', D.how.plan, function (v) { D.how.plan = v; saveDraft(); }, 'Example: 1. Pilot in two locations. 2. Review after 30 days. 3. Roll out.').node,
+        textField('How will we know it is working?', D.how.measure, function (v) { D.how.measure = v; saveDraft(); }, 'Example: Booked jobs per technician reaches 14.').node,
+        textField('What and who do we need?', D.how.needs, function (v) { D.how.needs = v; saveDraft(); }, 'Example: Two site leads, one hour a week, the shared board.').node);
+    } else if (step === 'when') {
+      main.append(el('span', { class: 'eyebrow' }, PH.When), el('h2', {}, 'When will you act?'), el('p', { class: 'hint' }, 'Pick one, then give it one first step and a date.'),
         chipGroup(VERDICTS, D.verdict, function (v) { D.verdict = v; saveDraft(); }, 'warnset'));
-      main.append(textField('Your next step', D.action, function (v) { D.action = v; saveDraft(); }, DC.act, 'input').node);
+      main.append(textField('Your first step', D.action, function (v) { D.action = v; saveDraft(); }, DC.act, 'input').node);
       main.append(textField('Who owns it (optional)', D.owner, function (v) { D.owner = v; saveDraft(); }, 'Name or team', 'input').node);
       var did = gid('f'), cid = gid('f');
       var due = el('input', { type: 'date', id: did });
@@ -608,17 +627,17 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
 
     function valid() {
       if (step === 'kind') return D.discipline ? '' : 'Pick Lead, Manage or Coach.';
-      if (step === 'decision') return D.decision.trim() ? '' : 'Describe the decision first.';
-      if (step === 'assume') return D.assumptions.some(function (x) { return x.text.trim(); }) ? '' : 'Add at least one assumption.';
-      if (step.indexOf('test') === 0) {
-        var it = D.assumptions.filter(function (x) { return x.text.trim(); })[+step.slice(4)];
-        return it.verdict ? '' : 'Pick a verdict for this assumption.';
+      if (step === 'why') return D.decision.trim() ? '' : 'Describe the decision first.';
+      if (step.charAt(0) === 'q') {
+        var A = D.answers[+step.slice(1)];
+        if (!(A.a || '').trim()) return 'Write your answer, even a short one.';
+        return A.conf ? '' : 'Say how sure you are.';
       }
-      if (step === 'worry') return D.worry ? '' : 'Pick the most likely reason.';
-      if (step === 'decide') {
+      if (step === 'who') return stakeholders(D).length ? '' : 'Name at least one person or group affected.';
+      if (step === 'when') {
         if (!D.verdict) return 'Pick what you will do.';
         if (!HALT[D.verdict]) {
-          if (!D.action.trim()) return 'Write one next step.';
+          if (!D.action.trim()) return 'Write one first step.';
           if (!D.due) return 'Choose a do-by date.';
           if (!D.check) return 'Choose a check-back date.';
         }
@@ -640,22 +659,19 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
   }
 
   function finish() {
-    var D = flow.data, now = new Date();
-    var items = D.assumptions.filter(function (x) { return x.text.trim(); });
-    var md = '# Decision: ' + D.decision.trim() + '\n' + D.discipline + ' / ' + stamp(now) + '\n\n## What we assumed\n';
-    items.forEach(function (a) {
-      md += '- ' + a.text.trim() + ' [' + a.verdict + ']\n';
-      if (a.evidence && a.evidence.trim()) md += '  Evidence: ' + a.evidence.trim() + '\n';
-      if (a.history && a.history.trim()) md += '  Track record: ' + a.history.trim() + '\n';
-      if (a.motive && a.motive.trim()) md += '  Motive: ' + a.motive.trim() + '\n';
-    });
-    md += '\n## If it failed: ' + D.worry + '\n';
-    (WORRIES[D.worry] || []).forEach(function (q) { md += '- ' + q.q + '\n  ' + ((D.fa[q.k] || '').trim() || '(no answer)') + '\n'; });
-    md += 'In our control / not: ' + (D.control.trim() || '(no answer)') + '\nPlan change: ' + (D.change.trim() || '(none)') + '\n';
-    md += '\n## Decision\nVerdict: ' + D.verdict + '\nNext step: ' + (D.action.trim() || '-') + '\nWho: ' + (D.owner.trim() || '-') + '\nDo by: ' + (D.due || '-') + '\nCheck back: ' + (D.check || '-');
+    var D = flow.data, now = new Date(), t = function (x) { return ((x || '').trim()) || '(no answer)'; };
+    var QL = qsFor(D);
+    var md = '# Decision: ' + D.decision.trim() + '\n' + D.discipline + ' / ' + stamp(now) + '\n\n## WHY\nWhy now: ' + t(D.why) + '\nIf we do nothing: ' + t(D.nowcost) + '\n\n## Critical questions\n';
+    D.answers.forEach(function (a, k) { md += (k + 1) + '. ' + QL[k].t + ': ' + QL[k].q + '\n   ' + t(a.a) + ' [' + a.conf + ']\n'; });
+    md += '\n## Who is affected\n';
+    stakeholders(D).forEach(function (w) { md += '- ' + w.name.trim() + '\n  Decision: ' + t(w.dec) + '\n  Outcome: ' + t(w.out) + '\n'; });
+    md += '\n## What we might not be considering\nMissing: ' + t(D.blind.missing) + '\nDisagreement: ' + t(D.blind.oppose) + '\nCould change: ' + t(D.blind.change);
+    md += '\n\n## HOW\nPlan: ' + t(D.how.plan) + '\nWorking if: ' + t(D.how.measure) + '\nNeeds: ' + t(D.how.needs);
+    md += '\n\n## WHEN\nVerdict: ' + D.verdict + '\nFirst step: ' + (D.action.trim() || '-') + '\nOwner: ' + (D.owner.trim() || '-') + '\nDo by: ' + (D.due || '-') + '\nCheck back: ' + (D.check || '-');
     state.records.unshift({
-      id: uid(), discipline: D.discipline, title: short(D.decision, 80), stamp: stamp(now), md: md,
-      assumptions: items.map(function (a) { return { text: a.text.trim(), verdict: a.verdict }; }), worry: D.worry,
+      id: uid(), discipline: D.discipline, title: short(D.decision, 80), stamp: stamp(now), md: md, why: D.why.trim(),
+      who: stakeholders(D).map(function (w) { return { name: w.name.trim(), dec: w.dec.trim(), out: w.out.trim() }; }),
+      answers: D.answers.map(function (a, k) { return { q: QL[k].q, a: (a.a || '').trim(), conf: a.conf }; }),
       decision: { verdict: D.verdict, action: D.action.trim(), owner: D.owner.trim(), due: D.due, check: D.check },
       actionDone: false, outcome: null
     });
@@ -663,7 +679,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     state.draft = null;
     persist();
     renderToday();
-    toast('Saved. Your next step is on the list.');
+    toast('Saved. Your first step is on the list.');
     window.scrollTo(0, 0);
   }
 
