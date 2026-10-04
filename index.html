@@ -285,6 +285,29 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     }
     try { navigator.clipboard.writeText(text).then(function () { done('Copied'); }, fb); } catch (e) { fb(); }
   }
+  function addToCalendar(r, btn) {
+    var d = r.decision || {}, day = d.check.replace(/-/g, '');
+    var end = plusDays(d.check, 1).replace(/-/g, '');
+    var esc = function (x) { return String(x || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;'); };
+    var ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Lead Manage Coach//EN', 'BEGIN:VEVENT', 'UID:' + r.id + '@lmc',
+      'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z', 'DTSTART;VALUE=DATE:' + day, 'DTEND;VALUE=DATE:' + end,
+      'SUMMARY:' + esc('Check back: ' + r.title),
+      'DESCRIPTION:' + esc('First step: ' + (d.action || '-') + '\nOwner: ' + (d.owner || '-') + '\nDid it work as expected? Log the result in Lead, Manage, Coach.'),
+      'BEGIN:VALARM', 'TRIGGER:PT9H', 'ACTION:DISPLAY', 'DESCRIPTION:Decision check-back', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    var label = btn.textContent;
+    function note(m) { btn.textContent = m; setTimeout(function () { btn.textContent = label; }, 2200); }
+    try {
+      var f = new File([ics], 'check-back.ics', { type: 'text/calendar' });
+      if (navigator.canShare && navigator.canShare({ files: [f] })) { navigator.share({ files: [f] }).catch(function () {}); return; }
+    } catch (e) {}
+    try {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+      a.download = 'check-back.ics';
+      document.body.appendChild(a); a.click(); a.remove();
+      note('Open the file to add it');
+    } catch (e) { note('Not available here'); }
+  }
   function armDelete(btn, fn) {
     var armed = false, t;
     btn.addEventListener('click', function () {
@@ -340,7 +363,9 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
 
     var go = el('button', { class: 'btn', type: 'button' }, 'New decision');
     go.addEventListener('click', function () { startFlow(null); });
-    root.append(go);
+    var quick = el('button', { class: 'btn ghost', type: 'button' }, 'Quick check (about 2 minutes)');
+    quick.addEventListener('click', function () { startFlow(null, true); });
+    root.append(el('div', { class: 'stack tight' }, go, quick));
 
     var row = el('div', { class: 'disc-row' });
     Object.keys(DISC).forEach(function (k) {
@@ -402,6 +427,8 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     });
     root.append(el('div', { class: 'card' }, jotField.node, el('div', { class: 'actions' }, jotBtn)), jots);
 
+    renderReview(root);
+
     /* Help */
     var steps = el('ol', { class: 'steps' },
       el('li', {}, el('b', {}, 'Pick the discipline. '), el('span', {}, 'Lead sets direction. Manage runs the results. Coach develops a person.')),
@@ -414,7 +441,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     );
     root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'How it works')),
       el('div', { class: 'body' }, steps, el('p', { class: 'hint' }, 'Guiding idea: an idea is only an impression until you have checked it, and your effort belongs on what is in your control.'),
-        el('p', { class: 'hint' }, 'Saved decisions stay on this device. To share one with your team, open it and tap Copy summary.'))));
+        el('p', { class: 'hint' }, 'Saved decisions stay on this device. To share one with your team, open it and tap Share with team.'))));
 
     app.append(root);
   }
@@ -449,14 +476,20 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       body.append(el('h3', {}, 'Check back'), nf.node, cg, el('div', { class: 'actions' }, log));
     }
     var pre = el('pre', {}, r.md);
+    var fullText = function () { return r.md + (r.outcome ? '\n\n## Result\n' + r.outcome.call + (r.outcome.note ? ': ' + r.outcome.note : '') : ''); };
     var copy = el('button', { class: 'btn ghost small', type: 'button' }, 'Copy summary');
-    copy.addEventListener('click', function () {
-      var t = r.md + (r.outcome ? '\n\n## Result\n' + r.outcome.call + (r.outcome.note ? ': ' + r.outcome.note : '') : '');
-      copyText(t, copy, pre);
+    copy.addEventListener('click', function () { copyText(fullText(), copy, pre); });
+    var share = el('button', { class: 'btn small', type: 'button' }, 'Share with team');
+    share.addEventListener('click', function () {
+      if (navigator.share) {
+        navigator.share({ title: 'Decision: ' + r.title, text: fullText() }).catch(function () {});
+      } else copyText(fullText(), share, pre);
     });
+    var cal = (d.check && !HALT[d.verdict]) ? el('button', { class: 'btn small ghost', type: 'button' }, 'Add check-back to calendar') : null;
+    if (cal) cal.addEventListener('click', function () { addToCalendar(r, cal); });
     var del = el('button', { class: 'btn danger small', type: 'button' }, 'Delete');
     armDelete(del, function () { state.records = state.records.filter(function (x) { return x.id !== r.id; }); persist(); renderToday(); });
-    body.append(pre, el('div', { class: 'actions' }, copy, del));
+    body.append(pre, el('div', { class: 'actions' }, share, cal, copy, del));
 
     var nextLine = (d.action && !HALT[d.verdict]) ? el('div', { class: 'next' }, el('b', {}, 'Next: '), d.action + (d.due ? ' (by ' + d.due + ')' : '')) : null;
     return el('details', { class: 'entry' },
@@ -464,6 +497,45 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
         el('span', { class: 'pills' }, r.discipline ? el('span', { class: 'mark', title: r.discipline, 'data-d': r.discipline }, DISC[r.discipline] ? DISC[r.discipline].m : '') : null, el('span', { class: 'pill ' + s.cls }, s.label), el('span', { class: 'pill' }, d.verdict || ''), assumedCount(r) ? el('span', { class: 'pill hot' }, assumedCount(r) + ' not verified') : null, el('span', { class: 'mono' }, r.stamp)),
         nextLine),
       body);
+  }
+
+  function renderReview(root) {
+    var all = state.records;
+    if (!all.length) return;
+    var logged = all.filter(function (r) { return r.outcome; });
+    var dl = el('dl', { class: 'sum' });
+    function row(k, v) { dl.append(el('dt', {}, k), el('dd', {}, v)); }
+    var overdue = all.filter(function (r) { return status(r).rank === 0; }).length;
+    row('Decisions', all.length + ' saved, ' + all.filter(function (r) { return r.quick; }).length + ' quick');
+    row('Results', logged.length + ' of ' + all.length + ' logged');
+    row('Overdue', overdue ? overdue + ' check-back' + (overdue > 1 ? 's' : '') + ' waiting' : 'none');
+    var call = { 'It worked': 0, 'Partly': 0, 'It did not': 0 };
+    logged.forEach(function (r) { if (call[r.outcome.call] !== undefined) call[r.outcome.call] += 1; });
+    if (logged.length) row('Outcomes', call['It worked'] + ' worked, ' + call['Partly'] + ' partly, ' + call['It did not'] + ' did not');
+    var ans = [], tally = {};
+    all.forEach(function (r) { (r.answers || []).forEach(function (a) {
+      ans.push(a);
+      if (a.conf && a.conf !== CONF[0]) tally[a.q] = (tally[a.q] || 0) + 1;
+    }); });
+    if (ans.length) {
+      var un = ans.filter(function (a) { return a.conf && a.conf !== CONF[0]; }).length;
+      row('Unverified', Math.round(un / ans.length * 100) + '% of your answers were belief or unknown');
+    }
+    var top = Object.keys(tally).sort(function (a, b) { return tally[b] - tally[a]; }).slice(0, 3);
+    var body = el('div', { class: 'body' }, dl);
+    if (top.length) {
+      var ol = el('ol', { class: 'steps' });
+      top.forEach(function (q) { ol.append(el('li', {}, el('span', {}, q + ' (' + tally[q] + ' times)'))); });
+      body.append(el('h3', {}, 'Where you are least sure'), ol);
+    }
+    var hi = logged.filter(function (r) { return assumedCount(r) >= 3; }), lo = logged.filter(function (r) { return assumedCount(r) < 3; });
+    var ok = function (a) { return a.filter(function (r) { return r.outcome.call === 'It worked'; }).length; };
+    if (hi.length >= 2 && lo.length >= 2) {
+      body.append(el('p', { class: 'hint' }, 'Decisions with 3 or more unverified answers worked ' + ok(hi) + ' of ' + hi.length + ' times. Those with fewer worked ' + ok(lo) + ' of ' + lo.length + '.'));
+    } else {
+      body.append(el('p', { class: 'hint' }, 'Log results on a few more decisions and this will show whether unverified answers lead to worse outcomes.'));
+    }
+    root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'Review how you decide')), body));
   }
 
   /* ---------- Guided flow ---------- */
@@ -498,26 +570,26 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       who: [{ name: '', dec: '', out: '' }, { name: '', dec: '', out: '' }], blind: { missing: '', oppose: '', change: '' },
       how: { plan: '', measure: '', needs: '' }, verdict: '', action: '', owner: '', due: '', check: '' };
   }
-  function startFlow(jot) {
+  function startFlow(jot, quick) {
     var data = blankData();
     if (jot) data.decision = jot.text;
-    flow = { data: data, i: 0, paused: false, jot: jot ? jot.id : null };
+    flow = { data: data, i: 0, paused: false, jot: jot ? jot.id : null, quick: !!quick };
     renderFlow();
   }
   function resumeFlow() {
     var d = state.draft;
     if (!d || !d.data || !d.data.answers) { state.draft = null; persist(); startFlow(null); toast('The old draft used an earlier format, so we started fresh.'); return; }
-    flow = { data: d.data, i: d.i || 0, paused: !!d.paused, jot: d.jot || null };
+    flow = { data: d.data, i: d.i || 0, paused: !!d.paused, jot: d.jot || null, quick: !!d.quick };
     renderFlow();
   }
   function saveDraft() {
     if (!flow) return;
-    state.draft = { data: flow.data, i: flow.i, paused: flow.paused, jot: flow.jot };
+    state.draft = { data: flow.data, i: flow.i, paused: flow.paused, jot: flow.jot, quick: flow.quick };
     persist();
   }
-  function stepList() { return ['kind', 'why', 'q0', 'q1', 'q2', 'q3', 'q4', 'who', 'blind', 'how', 'when']; }
+  function stepList() { return flow.quick ? ['kind', 'why', 'q0', 'q1', 'q4', 'who', 'when'] : ['kind', 'why', 'q0', 'q1', 'q2', 'q3', 'q4', 'who', 'blind', 'how', 'when']; }
   function stakeholders(D) { return D.who.filter(function (w) { return w.name.trim(); }); }
-  function assumedCount(r) { return (r.answers || []).filter(function (x) { return x.conf && x.conf !== CONF[0]; }).length; }
+  function assumedCount(r) { return (r.answers || []).filter(function (x) { return x.a && x.conf && x.conf !== CONF[0]; }).length; }
 
   function renderFlow() {
     clearInterval(timer);
@@ -559,7 +631,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
         textField('What happens if we do nothing?', D.nowcost, function (v) { D.nowcost = v; saveDraft(); }, 'Example: We lose two accounts by spring.').node);
     } else if (step.charAt(0) === 'q') {
       var qi = +step.slice(1), Q = qsFor(D)[qi], A = D.answers[qi];
-      main.append(el('span', { class: 'eyebrow' }, D.discipline + ' / question ' + (qi + 1) + ' of 5 / ' + Q.t), el('h2', {}, Q.q),
+      main.append(el('span', { class: 'eyebrow' }, D.discipline + (flow.quick ? ' / quick check / ' : ' / question ' + (qi + 1) + ' of 5 / ') + Q.t), el('h2', {}, Q.q),
         el('p', { class: 'hint' }, STOIC));
       main.append(textField('Your answer', A.a, function (v) { A.a = v; saveDraft(); }, Q.ph).node);
       main.append(el('div', { class: 'field' }, el('span', { class: 'lab' }, 'How sure are you?'),
@@ -661,17 +733,20 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
   function finish() {
     var D = flow.data, now = new Date(), t = function (x) { return ((x || '').trim()) || '(no answer)'; };
     var QL = qsFor(D);
-    var md = '# Decision: ' + D.decision.trim() + '\n' + D.discipline + ' / ' + stamp(now) + '\n\n## WHY\nWhy now: ' + t(D.why) + '\nIf we do nothing: ' + t(D.nowcost) + '\n\n## Critical questions\n';
-    D.answers.forEach(function (a, k) { md += (k + 1) + '. ' + QL[k].t + ': ' + QL[k].q + '\n   ' + t(a.a) + ' [' + a.conf + ']\n'; });
+    var qk = flow.quick;
+    var md = '# Decision: ' + D.decision.trim() + '\n' + D.discipline + (qk ? ' (quick check)' : '') + ' / ' + stamp(now) + '\n\n## WHY\nWhy now: ' + t(D.why) + '\nIf we do nothing: ' + t(D.nowcost) + '\n\n## Critical questions\n';
+    D.answers.forEach(function (a, k) { if (qk && !(a.a || '').trim()) return; md += (k + 1) + '. ' + QL[k].t + ': ' + QL[k].q + '\n   ' + t(a.a) + ' [' + a.conf + ']\n'; });
     md += '\n## Who is affected\n';
     stakeholders(D).forEach(function (w) { md += '- ' + w.name.trim() + '\n  Decision: ' + t(w.dec) + '\n  Outcome: ' + t(w.out) + '\n'; });
-    md += '\n## What we might not be considering\nMissing: ' + t(D.blind.missing) + '\nDisagreement: ' + t(D.blind.oppose) + '\nCould change: ' + t(D.blind.change);
-    md += '\n\n## HOW\nPlan: ' + t(D.how.plan) + '\nWorking if: ' + t(D.how.measure) + '\nNeeds: ' + t(D.how.needs);
+    if (!qk) {
+      md += '\n## What we might not be considering\nMissing: ' + t(D.blind.missing) + '\nDisagreement: ' + t(D.blind.oppose) + '\nCould change: ' + t(D.blind.change);
+      md += '\n\n## HOW\nPlan: ' + t(D.how.plan) + '\nWorking if: ' + t(D.how.measure) + '\nNeeds: ' + t(D.how.needs);
+    }
     md += '\n\n## WHEN\nVerdict: ' + D.verdict + '\nFirst step: ' + (D.action.trim() || '-') + '\nOwner: ' + (D.owner.trim() || '-') + '\nDo by: ' + (D.due || '-') + '\nCheck back: ' + (D.check || '-');
     state.records.unshift({
       id: uid(), discipline: D.discipline, title: short(D.decision, 80), stamp: stamp(now), md: md, why: D.why.trim(),
       who: stakeholders(D).map(function (w) { return { name: w.name.trim(), dec: w.dec.trim(), out: w.out.trim() }; }),
-      answers: D.answers.map(function (a, k) { return { q: QL[k].q, a: (a.a || '').trim(), conf: a.conf }; }),
+      quick: !!qk, answers: D.answers.map(function (a, k) { return { q: QL[k].q, a: (a.a || '').trim(), conf: a.conf }; }).filter(function (x) { return x.a; }),
       decision: { verdict: D.verdict, action: D.action.trim(), owner: D.owner.trim(), due: D.due, check: D.check },
       actionDone: false, outcome: null
     });
