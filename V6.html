@@ -1,0 +1,939 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lead, Manage, Coach</title>
+<meta name="description" content="A decision tool for franchise leaders: pick Lead, Manage or Coach, answer plain questions, then choose a next step.">
+<meta name="theme-color" content="#F3F4F8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D1220" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="LMC Desk">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one column. A Today screen lists decisions and next steps; "New decision" opens a one-question-per-screen guided flow. Each discipline owns a color: Lead is indigo, Manage is pine, Coach is berry. Amber is kept for the pause and anything due. */
+:root {
+  --bg: #F3F4F8;
+  --surface: #FFFFFF;
+  --field: #F7F8FB;
+  --fg: #14213D;
+  --muted: #5A6479;
+  --line: #D8DCE8;
+  --accent: #2B4C9B;
+  --accent-fg: #FFFFFF;
+  --accent-soft: #E3E9F8;
+  --lead: #2B4C9B; --lead-soft: #E3E9F8;
+  --manage: #1D7566; --manage-soft: #DDF0EB;
+  --coach: #8E3B7A; --coach-soft: #F3E3EF;
+  --warn: #9A4A06;
+  --warn-soft: #F7E8D6;
+  --crit: #B3261E;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --body: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1220; --surface: #151C30; --field: #10162A; --fg: #E8ECF6; --muted: #98A2BC;
+    --line: #29324D; --accent: #8FA9F0; --accent-fg: #0B1630; --accent-soft: #1B2745;
+    --lead: #8FA9F0; --lead-soft: #1B2745; --manage: #5CCBB7; --manage-soft: #14332D; --coach: #E39BD0; --coach-soft: #3A1B33;
+    --warn: #EBA561; --warn-soft: #33261A; --crit: #F0877F; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1220; --surface: #151C30; --field: #10162A; --fg: #E8ECF6; --muted: #98A2BC;
+  --line: #29324D; --accent: #8FA9F0; --accent-fg: #0B1630; --accent-soft: #1B2745;
+  --lead: #8FA9F0; --lead-soft: #1B2745; --manage: #5CCBB7; --manage-soft: #14332D; --coach: #E39BD0; --coach-soft: #3A1B33;
+  --warn: #EBA561; --warn-soft: #33261A; --crit: #F0877F; color-scheme: dark;
+}
+[data-d="Lead"] { --dc: var(--lead); --ds: var(--lead-soft); }
+[data-d="Manage"] { --dc: var(--manage); --ds: var(--manage-soft); }
+[data-d="Coach"] { --dc: var(--coach); --ds: var(--coach-soft); }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 17px; line-height: 1.5; }
+.wrap { max-width: 640px; margin-inline: auto; padding-inline: 16px; padding-block: 20px 120px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--display); font-weight: 700; font-size: 32px; line-height: 1.1; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 25px; line-height: 1.2; margin: 0; text-wrap: balance; }
+h3 { font-family: var(--display); font-weight: 600; font-size: 18px; margin: 0; }
+.lede { color: var(--muted); margin: 6px 0 0; max-width: 60ch; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.stack.tight { gap: 10px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+label, .lab { font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+label.q { font-family: var(--body); font-size: 17px; letter-spacing: 0; text-transform: none; color: var(--fg); font-weight: 600; }
+.hint { color: var(--muted); font-size: 15px; margin: 0; }
+input[type="text"], input[type="date"], textarea {
+  width: 100%; font: inherit; font-size: 17px; color: var(--fg); background: var(--field);
+  border: 1px solid var(--line); border-radius: 8px; padding: 11px 12px; min-width: 0; min-height: 48px;
+}
+textarea { resize: vertical; min-height: 96px; line-height: 1.45; }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.75; }
+input:focus-visible, textarea:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select { width: 100%; font: inherit; font-size: 16px; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 11px 12px; min-height: 48px; }
+.btn {
+  font: inherit; font-weight: 600; font-size: 17px; min-height: 52px; padding: 0 20px; border-radius: 8px;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); cursor: pointer;
+}
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn.small { min-height: 42px; font-size: 15px; padding: 0 14px; }
+.btn.danger { color: var(--crit); border-color: var(--line); background: transparent; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.actions .btn { flex: 1 1 140px; }
+.mono { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.02em; }
+.banner { background: var(--accent-soft); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.banner.warn { background: var(--warn-soft); }
+.banner strong { font-family: var(--display); font-size: 17px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { position: relative; display: block; text-transform: none; letter-spacing: 0; font-family: var(--body); font-size: 16px; color: var(--fg); }
+.chip input { position: absolute; opacity: 0; inset: 0; margin: 0; width: 100%; height: 100%; cursor: pointer; }
+.chip span { display: flex; align-items: center; min-height: 48px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); font-weight: 500; }
+.chip input:checked + span { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chips.col { flex-direction: column; }
+.chips.col .chip span { min-height: 56px; }
+.chips.warnset .chip input:checked + span { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 400px) { .two { grid-template-columns: 1fr; } }
+.progress { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.progress .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.progress .bar i { display: block; height: 100%; background: var(--accent); }
+.progress .row { display: flex; justify-content: space-between; align-items: center; }
+.linkbtn { font: inherit; font-size: 15px; background: none; border: 0; color: var(--accent); padding: 8px 0; min-height: 44px; cursor: pointer; font-weight: 600; }
+.pause { align-items: center; text-align: center; padding-block: 36px; background: var(--warn-soft); border-color: var(--warn); }
+.pause .count { font-family: var(--display); font-weight: 700; font-size: 100px; line-height: 1; color: var(--warn); font-variant-numeric: tabular-nums; }
+.pause p { margin: 0; max-width: 32ch; }
+.pause .bar { width: 100%; height: 6px; background: var(--surface); border-radius: 3px; overflow: hidden; }
+.pause .bar i { display: block; height: 100%; width: 0; background: var(--warn); }
+.flowbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--surface); border-top: 1px solid var(--line);
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+}
+.flowbar div { max-width: 640px; margin-inline: auto; display: flex; gap: 10px; }
+.flowbar .btn { flex: 1; }
+.flowbar .btn.ghost { flex: 0 0 auto; }
+details.entry { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0 14px; }
+details.entry summary { cursor: pointer; padding: 12px 0; display: flex; flex-direction: column; gap: 6px; list-style: none; min-height: 48px; }
+details.entry summary::-webkit-details-marker { display: none; }
+details.entry summary .t { font-weight: 600; overflow-wrap: anywhere; }
+details.entry .body { display: flex; flex-direction: column; gap: 14px; padding-bottom: 14px; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pill { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 4px; background: var(--field); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; }
+.pill.hot { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+.pill.live { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+dl.sum { margin: 0; display: grid; grid-template-columns: 96px 1fr; gap: 6px 12px; font-size: 16px; }
+dl.sum dt { font-family: var(--mono); font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding-top: 3px; }
+dl.sum dd { margin: 0; overflow-wrap: anywhere; }
+.next { font-size: 15px; color: var(--muted); overflow-wrap: anywhere; }
+.next b { color: var(--fg); font-weight: 600; }
+pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.empty { color: var(--muted); margin: 0; font-size: 16px; }
+.example { border-style: dashed; }
+.jot { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.jot .text { overflow-wrap: anywhere; white-space: pre-wrap; }
+.steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+.steps span { color: var(--muted); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 15px; z-index: 20; max-width: calc(100% - 32px); }
+.disc-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tile { font: inherit; text-align: left; border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; padding: 10px; min-height: 92px; display: flex; flex-direction: column; gap: 2px; cursor: pointer; min-width: 0; }
+.tile[aria-pressed="true"] { background: var(--ds, var(--accent-soft)); border-color: var(--dc, var(--accent)); }
+.tile .l { font-family: var(--display); font-weight: 700; font-size: 19px; color: var(--dc, var(--accent)); }
+.tile .s { font-size: 13px; color: var(--muted); line-height: 1.3; }
+.tile .n { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: auto; padding-top: 4px; }
+.mark { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1.5px solid var(--dc, var(--accent)); color: var(--dc, var(--accent)); background: var(--ds, transparent); font-family: var(--mono); font-weight: 500; font-size: 12px; border-radius: 3px; flex: none; }
+.brand { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chip.disc span { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; }
+.chip.disc input:checked + span { background: var(--ds); border-color: var(--dc); color: var(--dc); }
+.chip.disc small { font-weight: 400; color: var(--muted); font-size: 14px; }
+@media (prefers-reduced-motion: no-preference) { .pause .bar i { transition: width 1s linear; } .progress .bar i { transition: width .25s ease; } }
+</style>
+
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function () {
+  var KEY = 'decision-desk-v2';
+  var OLD = 'decision-desk-v1';
+  var state = { records: [], jots: [], draft: null };
+  var flow = null;
+  var timer = null;
+  var app = document.getElementById('app');
+
+  /* ---------- Content ---------- */
+  var TESTS = [
+    { k: 'evidence', q: 'What have you actually seen or measured that backs this up?', ph: 'Example: Last quarter, 3 of 4 franchisees had open capacity.' },
+    { k: 'history', q: 'How often has this held true in similar cases?', ph: 'Example: It held about half the time.' },
+    { k: 'motive', q: 'Do you want this to be true? What do you gain if it is?', ph: 'Example: Yes. It makes the plan much simpler.' }
+  ];
+  var CHECK = ['Solid', 'Needs checking', 'Does not hold'];
+  var WORRIES = {
+    'We could not deliver': [
+      { k: 'a0', q: 'What one person, supplier or process, if it fails, stops everything?' },
+      { k: 'a1', q: 'What is your backup, and has anyone ever tried it?' }
+    ],
+    'Competitors cut prices': [
+      { k: 'a0', q: 'At what price cut do we stop making money?' },
+      { k: 'a1', q: 'What do we offer that a competitor cannot easily copy?' }
+    ],
+    'People did not adopt it': [
+      { k: 'a0', q: 'What will people have to stop doing for this to work?' },
+      { k: 'a1', q: 'Who will resist, and what do they lose?' }
+    ],
+    'The economy shifted': [
+      { k: 'a0', q: 'Which cost or customer demand would hurt most if it moved 20%?' },
+      { k: 'a1', q: 'What could you pause quickly if money tightened?' }
+    ]
+  };
+  var DISC = {
+    'Lead': { m: 'L', line: 'Set direction', desc: 'Where are we going, and why?', ph: 'Example: Should we offer shared leads to franchisees in two more territories?', act: 'Example: Share the new direction with every franchisee on the next call.' },
+    'Manage': { m: 'M', line: 'Run the results', desc: 'Numbers, KPIs, systems and variances.', ph: 'Example: Should we change how service calls are dispatched at the weak locations?', act: 'Example: Pull the latest variance report and review it by Friday.' },
+    'Coach': { m: 'C', line: 'Develop a person', desc: 'Their growth, performance or a hard conversation.', ph: 'Example: Should I move a strong technician into a lead role?', act: 'Example: Hold a 30-minute feedback conversation this week.' }
+  };
+  var filterDisc = '';
+  var VERDICTS = ['Go', 'Test first', 'Wait', 'Stop'];
+  var HALT = { 'Wait': 1, 'Stop': 1 };
+
+  /* ---------- Storage ---------- */
+  function load() {
+    var got = false;
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) {
+        var o = JSON.parse(raw);
+        if (o && typeof o === 'object') {
+          if (Array.isArray(o.records)) state.records = o.records;
+          if (Array.isArray(o.jots)) state.jots = o.jots;
+          if (o.draft) state.draft = o.draft;
+          got = true;
+        }
+      }
+    } catch (e) {}
+    if (got) return;
+    try {
+      var old = localStorage.getItem(OLD);
+      if (!old) return;
+      var p = JSON.parse(old);
+      var map = { 'Proceed': 'Go', 'Test first': 'Test first', 'Pause': 'Wait', 'Stop': 'Stop' };
+      (p.records || []).forEach(function (r) {
+        if (!r || !r.decision) return;
+        var d = r.decision;
+        state.records.push({ id: r.id, title: r.title, stamp: r.stamp, md: r.md, assumptions: [], worry: '',
+          decision: { verdict: map[d.verdict] || d.verdict || 'Go', action: d.action || '', owner: d.owner || '', due: d.due || '', check: d.reviewOn || '' },
+          actionDone: !!r.actionDone, outcome: r.outcome || null });
+      });
+      (p.captures || []).forEach(function (c) { if (c && !c.done) state.jots.push({ id: c.id, text: c.text, stamp: c.stamp }); });
+    } catch (e) {}
+  }
+  function persist() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  /* ---------- Helpers ---------- */
+  function el(tag, attrs) {
+    var n = document.createElement(tag);
+    attrs = attrs || {};
+    Object.keys(attrs).forEach(function (k) {
+      if (k === 'class') n.className = attrs[k]; else n.setAttribute(k, attrs[k]);
+    });
+    for (var i = 2; i < arguments.length; i++) if (arguments[i] != null) n.append(arguments[i]);
+    return n;
+  }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function dkey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function stamp(d) { return dkey(d) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function short(s, n) { s = (s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 3) + '...' : s; }
+  function plusDays(iso, n) {
+    var p = iso.split('-');
+    var d = new Date(+p[0], +p[1] - 1, +p[2] + n);
+    return dkey(d);
+  }
+  var seq = 0;
+  function gid(p) { seq += 1; return p + seq; }
+
+  var toastTimer;
+  function toast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.hidden = true; }, 2600);
+  }
+  function copyText(text, btn, source) {
+    var label = btn.textContent;
+    function done(m) { btn.textContent = m; setTimeout(function () { btn.textContent = label; }, 1600); }
+    function fb() {
+      if (source) {
+        var r = document.createRange(); r.selectNodeContents(source);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        done('Selected, tap Copy');
+      } else done('Copy not available');
+    }
+    try { navigator.clipboard.writeText(text).then(function () { done('Copied'); }, fb); } catch (e) { fb(); }
+  }
+  function addToCalendar(r, btn) {
+    var d = r.decision || {}, day = d.check.replace(/-/g, '');
+    var end = plusDays(d.check, 1).replace(/-/g, '');
+    var esc = function (x) { return String(x || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;'); };
+    var ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Lead Manage Coach//EN', 'BEGIN:VEVENT', 'UID:' + r.id + '@lmc',
+      'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z', 'DTSTART;VALUE=DATE:' + day, 'DTEND;VALUE=DATE:' + end,
+      'SUMMARY:' + esc('Check back: ' + r.title),
+      'DESCRIPTION:' + esc('First step: ' + (d.action || '-') + '\nOwner: ' + (d.owner || '-') + '\nDid it work as expected? Log the result in Lead, Manage, Coach.'),
+      'BEGIN:VALARM', 'TRIGGER:PT9H', 'ACTION:DISPLAY', 'DESCRIPTION:Decision check-back', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    var label = btn.textContent;
+    function note(m) { btn.textContent = m; setTimeout(function () { btn.textContent = label; }, 2200); }
+    try {
+      var f = new File([ics], 'check-back.ics', { type: 'text/calendar' });
+      if (navigator.canShare && navigator.canShare({ files: [f] })) { navigator.share({ files: [f] }).catch(function () {}); return; }
+    } catch (e) {}
+    try {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+      a.download = 'check-back.ics';
+      document.body.appendChild(a); a.click(); a.remove();
+      note('Open the file to add it');
+    } catch (e) { note('Not available here'); }
+  }
+  function armDelete(btn, fn) {
+    var armed = false, t;
+    btn.addEventListener('click', function () {
+      if (!armed) { armed = true; btn.textContent = 'Tap again to delete'; t = setTimeout(function () { armed = false; btn.textContent = 'Delete'; }, 3000); }
+      else { clearTimeout(t); fn(); }
+    });
+  }
+  function chipGroup(opts, current, onPick, cls) {
+    var name = gid('g');
+    var wrap = el('div', { class: 'chips ' + (cls || ''), role: 'radiogroup' });
+    opts.forEach(function (o, i) {
+      var input = el('input', { type: 'radio', name: name, id: name + '-' + i, value: o });
+      if (o === current) input.checked = true;
+      input.addEventListener('change', function () { onPick(o); });
+      wrap.append(el('label', { class: 'chip', for: name + '-' + i }, input, el('span', {}, o)));
+    });
+    return wrap;
+  }
+  function textField(label, value, onInput, ph, kind) {
+    var id = gid('f');
+    var c = kind === 'input' ? el('input', { type: 'text', id: id }) : el('textarea', { id: id });
+    if (ph) c.setAttribute('placeholder', ph);
+    c.value = value || '';
+    c.addEventListener('input', function () { onInput(c.value); });
+    return { node: el('div', { class: 'field' }, el('label', { class: 'q', for: id }, label), c), control: c };
+  }
+
+  /* ---------- Status ---------- */
+  function status(r) {
+    var today = dkey(new Date());
+    var d = r.decision || {};
+    if (r.outcome) return { label: 'Reviewed', cls: '', rank: 4 };
+    var live = !HALT[d.verdict];
+    if (live && d.action && !r.actionDone && d.due && d.due < today) return { label: 'Overdue', cls: 'hot', rank: 0 };
+    if (live && d.check && d.check <= today) return { label: 'Check back', cls: 'hot', rank: 0 };
+    if (live && d.action && !r.actionDone) return { label: 'Next step open', cls: 'live', rank: 1 };
+    if (r.actionDone) return { label: 'Step done', cls: '', rank: 2 };
+    return { label: d.verdict || 'Logged', cls: '', rank: 3 };
+  }
+
+  /* ---------- Today screen ---------- */
+  function renderToday() {
+    clearInterval(timer);
+    flow = null;
+    app.replaceChildren();
+    var root = el('div', { class: 'stack' });
+
+    var head = el('div', { class: 'stack tight' },
+      el('span', { class: 'eyebrow' }, 'Decision Desk / ' + new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })),
+      el('h1', {}, 'Lead, Manage, Coach'),
+      el('p', { class: 'lede' }, 'Slow down before a big call. Pick the discipline, answer five critical questions, see who is affected, then choose your first step.'));
+    root.append(head);
+
+    var go = el('button', { class: 'btn', type: 'button' }, 'New decision');
+    go.addEventListener('click', function () { startFlow(null); });
+    var quick = el('button', { class: 'btn ghost', type: 'button' }, 'Quick check (about 2 minutes)');
+    quick.addEventListener('click', function () { startFlow(null, true); });
+    root.append(el('div', { class: 'stack tight' }, go, quick));
+
+    var row = el('div', { class: 'disc-row' });
+    Object.keys(DISC).forEach(function (k) {
+      var n = state.records.filter(function (r) { return r.discipline === k && status(r).rank <= 1; }).length;
+      var t = el('button', { class: 'tile', type: 'button', 'aria-pressed': filterDisc === k ? 'true' : 'false', 'data-d': k },
+        el('span', { class: 'l' }, k), el('span', { class: 's' }, DISC[k].line), el('span', { class: 'n' }, n ? n + ' open' : 'none open'));
+      t.addEventListener('click', function () { filterDisc = filterDisc === k ? '' : k; renderToday(); });
+      row.append(t);
+    });
+    root.append(row);
+
+    if (state.draft) {
+      var dt = short(state.draft.data.decision, 60) || 'Untitled';
+      var cont = el('button', { class: 'btn ghost small', type: 'button' }, 'Continue draft');
+      cont.addEventListener('click', function () { resumeFlow(); });
+      var drop = el('button', { class: 'btn danger small', type: 'button' }, 'Discard draft');
+      drop.addEventListener('click', function () { state.draft = null; persist(); renderToday(); });
+      root.append(el('div', { class: 'banner warn' }, el('span', { class: 'lab' }, 'Unfinished'), el('strong', {}, dt), el('div', { class: 'actions', style: 'margin-top:8px' }, cont, drop)));
+    }
+
+    var recs = state.records.filter(function (r) { return !filterDisc || r.discipline === filterDisc; }).sort(function (a, b) {
+      var sa = status(a).rank, sb = status(b).rank;
+      if (sa !== sb) return sa - sb;
+      return (a.decision.due || '9999') < (b.decision.due || '9999') ? -1 : 1;
+    });
+    var hot = recs.filter(function (r) { return status(r).rank === 0; }).length;
+    var open = recs.filter(function (r) { return status(r).rank === 1; }).length;
+
+    root.append(el('h3', {}, filterDisc ? filterDisc + ' decisions' : 'Your decisions'));
+    if (recs.length) {
+      root.append(el('div', { class: 'banner' }, el('span', { class: 'lab' }, hot ? 'Needs you now' : 'Nothing overdue'), el('strong', {}, hot + ' due, ' + open + ' with a next step open')));
+      var list = el('div', { class: 'stack tight' });
+      recs.forEach(function (r) { list.append(recordCard(r)); });
+      root.append(list);
+    } else {
+      root.append(el('p', { class: 'empty' }, filterDisc && state.records.length ? 'No ' + filterDisc + ' decisions yet. Tap the tile again to see all.' : 'Nothing here yet. Tap New decision to work through your first one. This is what a finished one looks like:'));
+      root.append(el('div', { class: 'card example' },
+        el('div', { class: 'pills' }, el('span', { class: 'pill' }, 'EXAMPLE'), el('span', { class: 'pill' }, 'Lead'), el('span', { class: 'pill live' }, 'Test first')),
+        el('strong', {}, 'Open a regional lead-share program'),
+        el('div', { class: 'next' }, el('b', {}, 'Next step: '), 'Ask 4 franchisees for their open technician hours this month. Due Friday. Check back in 2 weeks.')));
+    }
+
+    /* Jot */
+    var jotField = textField('Jot a thought, judge it later', '', function () {}, 'Say it or type it. Do not edit or evaluate.', 'area');
+    var jotBtn = el('button', { class: 'btn ghost small', type: 'button' }, 'Save thought');
+    jotBtn.addEventListener('click', function () {
+      var v = jotField.control.value.trim();
+      if (!v) { toast('Type a thought first.'); return; }
+      state.jots.unshift({ id: uid(), text: v, stamp: stamp(new Date()) });
+      persist(); renderToday(); toast('Saved. Review it when you are ready.');
+    });
+    var jots = el('div', { class: 'stack tight' });
+    state.jots.forEach(function (j) {
+      var mk = el('button', { class: 'btn small', type: 'button' }, 'Make it a decision');
+      mk.addEventListener('click', function () { startFlow(j); });
+      var del = el('button', { class: 'btn danger small', type: 'button' }, 'Delete');
+      armDelete(del, function () { state.jots = state.jots.filter(function (x) { return x.id !== j.id; }); persist(); renderToday(); });
+      jots.append(el('div', { class: 'jot' }, el('span', { class: 'mono' }, j.stamp), el('div', { class: 'text' }, j.text), el('div', { class: 'actions' }, mk, del)));
+    });
+    root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'Jot a thought' + (state.jots.length ? ' (' + state.jots.length + ' saved)' : ''))), el('div', { class: 'body' }, jotField.node, el('div', { class: 'actions' }, jotBtn), jots)));
+
+    renderReview(root);
+    renderBackup(root);
+
+    /* Help */
+    var steps = el('ol', { class: 'steps' },
+      el('li', {}, el('b', {}, 'Pick the discipline. '), el('span', {}, 'Lead sets direction. Manage runs the results. Coach develops a person.')),
+      el('li', {}, el('b', {}, 'Why. '), el('span', {}, 'Name the decision, why now, and the cost of doing nothing.')),
+      el('li', {}, el('b', {}, 'Other options. '), el('span', {}, 'Name at least one real alternative to your first idea.')),
+      el('li', {}, el('b', {}, 'Five critical questions. '), el('span', {}, 'Answer each, say how sure you are, then challenge what you only believe or verify what you do not know.')),
+      el('li', {}, el('b', {}, 'Who is affected. '), el('span', {}, 'By the decision, and by how it turns out.')),
+      el('li', {}, el('b', {}, 'What are we missing. '), el('span', {}, 'After a short pause, look for blind spots.')),
+      el('li', {}, el('b', {}, 'How and when. '), el('span', {}, 'The plan, a first step, an owner and a date.')),
+      el('li', {}, el('b', {}, 'Check back. '), el('span', {}, 'Compare what happened with what you expected.'))
+    );
+    root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'How it works')),
+      el('div', { class: 'body' }, steps, el('p', { class: 'hint' }, 'Guiding idea: an idea is only an impression until you have checked it, and your effort belongs on what is in your control.'),
+        el('p', { class: 'hint' }, 'Saved decisions stay on this device. To share one with your team, open it and tap Share with team. Back up from the bottom of this screen.'))));
+
+    app.append(root);
+  }
+
+  function recordCard(r) {
+    var s = status(r), d = r.decision || {};
+    var body = el('div', { class: 'body' });
+    var dl = el('dl', { class: 'sum' });
+    [['Type', r.discipline || '-']].concat(r.why ? [['Why', r.why]] : [],
+      r.who && r.who.length ? [['Affects', r.who.map(function (w) { return w.name; }).join(', ')]] : [],
+      [['Decision', d.verdict || '-'], ['First step', d.action || '-'], ['Owner', d.owner || '-'], ['Do by', d.due || '-'], ['Check back', d.check || '-']]).forEach(function (p) {
+      dl.append(el('dt', {}, p[0]), el('dd', {}, p[1]));
+    });
+    body.append(dl);
+    if (r.options && r.options.alt1) {
+      body.append(el('h3', {}, 'Other options considered'), el('p', { class: 'hint' }, r.options.alt1 + (r.options.alt2 ? '; ' + r.options.alt2 : '')));
+    }
+    if (r.checks && r.checks.length) {
+      var cl = el('div', { class: 'stack tight' });
+      r.checks.forEach(function (c) {
+        var b = el('button', { class: 'btn small' + (c.done ? ' ghost' : ''), type: 'button' }, c.done ? 'Reopen' : 'Mark verified');
+        b.addEventListener('click', function () { c.done = !c.done; persist(); renderToday(); });
+        cl.append(el('div', { class: 'jot' }, el('div', { class: 'text' }, (c.done ? 'Verified: ' : 'To verify: ') + c.q), el('div', { class: 'next' }, c.t || ''), el('div', { class: 'actions' }, b)));
+      });
+      body.append(el('h3', {}, 'Still to verify'), cl);
+    }
+    if (d.action && !HALT[d.verdict]) {
+      var done = el('button', { class: 'btn small' + (r.actionDone ? ' ghost' : ''), type: 'button' }, r.actionDone ? 'Reopen next step' : 'Mark next step done');
+      done.addEventListener('click', function () { r.actionDone = !r.actionDone; persist(); renderToday(); });
+      body.append(el('div', { class: 'actions' }, done));
+    }
+    if (r.outcome) {
+      body.append(el('div', { class: 'banner' }, el('span', { class: 'lab' }, 'Result: ' + r.outcome.call), el('span', {}, r.outcome.note || '(no note)')));
+    } else if (!HALT[d.verdict]) {
+      var call = 'Worked', note = '';
+      var nf = textField('How did it turn out compared with what you expected?', '', function (v) { note = v; }, 'What happened, and what surprised you?');
+      var cg = chipGroup(['It worked', 'Partly', 'It did not'], '', function (v) { call = v; });
+      var log = el('button', { class: 'btn small', type: 'button' }, 'Log result');
+      log.addEventListener('click', function () {
+        if (!cg.querySelector('input:checked')) { toast('Pick how it turned out.'); return; }
+        var mi = r._missedIdx || 0, na = (r.answers || []).length;
+        delete r._missedIdx;
+        r.outcome = { call: call, note: note.trim(), stamp: stamp(new Date()), missed: mi === 0 ? '' : (mi === na + 1 ? 'Something we never asked' : r.answers[mi - 1].q) };
+        persist(); renderToday(); toast('Logged. If it went badly, look again at the answers you were unsure about.');
+      });
+      var mf = null, msel = null, mopts = [];
+      if ((r.answers || []).length) {
+        mopts = ['Nothing was wrong'].concat(r.answers.map(function (a) { return short(a.q, 70); }), ['Something we never asked']);
+        var mid = gid('f');
+        msel = el('select', { id: mid });
+        mopts.forEach(function (o) { msel.append(el('option', { value: o }, o)); });
+        mf = el('div', { class: 'field' }, el('label', { class: 'q', for: mid }, 'If it went wrong, which question would have caught it?'), msel);
+      }
+      log.addEventListener('click', function () { r._missedIdx = msel ? msel.selectedIndex : 0; }, true);
+      body.append(el('h3', {}, 'Check back'), nf.node, cg, mf, el('div', { class: 'actions' }, log));
+    }
+    var pre = el('pre', {}, r.md);
+    var chText = function () {
+      return ((r.challenges || []).length ? '\n\n## Challenges\n' + r.challenges.map(function (c) { return '- ' + (c.from || 'Colleague') + ': ' + c.text; }).join('\n') : '') +
+        ((r.updates || []).length ? '\n\n## Updates\n' + r.updates.map(function (u) { return '- ' + u.stamp + ': ' + (u.note || 'plan updated'); }).join('\n') : '');
+    };
+    var fullText = function () { return r.md + chText() + (r.outcome ? '\n\n## Result\n' + r.outcome.call + (r.outcome.note ? ': ' + r.outcome.note : '') + (r.outcome.missed ? '\nWould have caught it: ' + r.outcome.missed : '') : ''); };
+    var share = el('button', { class: 'btn small', type: 'button' }, 'Share with team');
+    share.addEventListener('click', function () {
+      if (navigator.share) {
+        navigator.share({ title: 'Decision: ' + r.title, text: fullText() }).catch(function () {});
+      } else copyText(fullText(), share, pre);
+    });
+    var editHost = el('div', { class: 'stack tight' });
+    var editBtn = el('button', { class: 'btn small ghost', type: 'button' }, 'Edit plan and dates');
+    editBtn.addEventListener('click', function () {
+      if (editHost.childNodes.length) { editHost.replaceChildren(); return; }
+      var E = { verdict: d.verdict, action: d.action || '', owner: d.owner || '', due: d.due || '', check: d.check || '', note: '' };
+      var did = gid('f'), cid = gid('f');
+      var due = el('input', { type: 'date', id: did }), chk = el('input', { type: 'date', id: cid });
+      due.value = E.due; chk.value = E.check;
+      due.addEventListener('change', function () { E.due = due.value; });
+      chk.addEventListener('change', function () { E.check = chk.value; });
+      var save = el('button', { class: 'btn small', type: 'button' }, 'Save changes');
+      save.addEventListener('click', function () {
+        if (!E.verdict) { toast('Pick what you will do.'); return; }
+        if (!HALT[E.verdict]) {
+          if (!E.action.trim()) { toast('Write one first step.'); return; }
+          if (!E.due) { toast('Choose a do-by date.'); return; }
+          if (!E.check) { toast('Choose a check-back date.'); return; }
+        }
+        r.decision = { verdict: E.verdict, action: E.action.trim(), owner: E.owner.trim(), due: E.due, check: E.check };
+        r.updates = r.updates || [];
+        r.updates.push({ stamp: stamp(new Date()), note: E.note.trim() });
+        var when = '## WHEN\nVerdict: ' + E.verdict + '\nFirst step: ' + (E.action.trim() || '-') + '\nOwner: ' + (E.owner.trim() || '-') + '\nDo by: ' + (E.due || '-') + '\nCheck back: ' + (E.check || '-');
+        r.md = /## WHEN/.test(r.md) ? r.md.replace(/## WHEN[\s\S]*$/, when) : r.md + '\n\n' + when;
+        persist(); renderToday(); toast('Updated.');
+      });
+      editHost.append(el('div', { class: 'card stack tight' },
+        chipGroup(VERDICTS, E.verdict, function (v) { E.verdict = v; }, 'warnset'),
+        textField('First step', E.action, function (v) { E.action = v; }, '', 'input').node,
+        textField('Owner', E.owner, function (v) { E.owner = v; }, 'Name or team', 'input').node,
+        el('div', { class: 'two' }, el('div', { class: 'field' }, el('label', { class: 'q', for: did }, 'Do it by'), due), el('div', { class: 'field' }, el('label', { class: 'q', for: cid }, 'Check back on'), chk)),
+        textField('What changed, and why?', '', function (v) { E.note = v; }, 'Example: Pushed two weeks because the site lead is out.').node,
+        el('div', { class: 'actions' }, save)));
+    });
+    var ask = el('button', { class: 'btn small ghost', type: 'button' }, 'Ask a leader to challenge this');
+    ask.addEventListener('click', function () {
+      var t = 'Please challenge my decision before I act on it.\n\n' + r.md + '\n\nReply with three things:\n1. The weakest assumption here.\n2. What we might be missing.\n3. What you would do differently.';
+      if (navigator.share) navigator.share({ title: 'Challenge this: ' + r.title, text: t }).catch(function () {}); else copyText(t, ask, pre);
+    });
+    var cal = (d.check && !HALT[d.verdict]) ? el('button', { class: 'btn small ghost', type: 'button' }, 'Add check-back to calendar') : null;
+    if (cal) cal.addEventListener('click', function () { addToCalendar(r, cal); });
+    var del = el('button', { class: 'btn danger small', type: 'button' }, 'Delete');
+    armDelete(del, function () { state.records = state.records.filter(function (x) { return x.id !== r.id; }); persist(); renderToday(); });
+    var chs = el('div', { class: 'stack tight' });
+    (r.challenges || []).forEach(function (c) { chs.append(el('div', { class: 'banner' }, el('span', { class: 'lab' }, 'Challenge from ' + (c.from || 'a colleague')), el('span', {}, c.text))); });
+    var cFrom = '', cText = '';
+    var cf1 = textField('Who challenged this?', '', function (v) { cFrom = v; }, 'Name', 'input');
+    var cf2 = textField('What did they say?', '', function (v) { cText = v; }, 'Their weakest assumption, what is missing, what they would do differently.');
+    var cSave = el('button', { class: 'btn small ghost', type: 'button' }, 'Save challenge');
+    cSave.addEventListener('click', function () {
+      if (!cText.trim()) { toast('Write what they said first.'); return; }
+      r.challenges = r.challenges || [];
+      r.challenges.push({ from: cFrom.trim(), text: cText.trim(), stamp: stamp(new Date()) });
+      persist(); renderToday(); toast('Challenge saved.');
+    });
+    body.append(el('h3', {}, 'Challenges'), chs, cf1.node, cf2.node, el('div', { class: 'actions' }, ask, cSave));
+    body.append(el('div', { class: 'actions' }, editBtn), editHost);
+    body.append(pre, el('div', { class: 'actions' }, share, cal, del));
+
+    var nextLine = (d.action && !HALT[d.verdict]) ? el('div', { class: 'next' }, el('b', {}, 'Next: '), d.action + (d.due ? ' (by ' + d.due + ')' : '')) : null;
+    return el('details', { class: 'entry' },
+      el('summary', {}, el('span', { class: 't' }, r.title),
+        el('span', { class: 'pills' }, r.discipline ? el('span', { class: 'mark', title: r.discipline, 'data-d': r.discipline }, DISC[r.discipline] ? DISC[r.discipline].m : '') : null, el('span', { class: 'pill ' + s.cls }, s.label), el('span', { class: 'pill' }, d.verdict || ''), openChecks(r) ? el('span', { class: 'pill hot' }, openChecks(r) + ' to verify') : (assumedCount(r) ? el('span', { class: 'pill hot' }, assumedCount(r) + ' not verified') : null), (r.challenges || []).length ? el('span', { class: 'pill live' }, r.challenges.length + ' challenge' + (r.challenges.length > 1 ? 's' : '')) : null, el('span', { class: 'mono' }, r.stamp)),
+        nextLine),
+      body);
+  }
+
+  function renderReview(root) {
+    var all = state.records;
+    if (!all.length) return;
+    var logged = all.filter(function (r) { return r.outcome; });
+    var dl = el('dl', { class: 'sum' });
+    function row(k, v) { dl.append(el('dt', {}, k), el('dd', {}, v)); }
+    var overdue = all.filter(function (r) { return status(r).rank === 0; }).length;
+    row('Decisions', all.length + ' saved, ' + all.filter(function (r) { return r.quick; }).length + ' quick');
+    row('Results', logged.length + ' of ' + all.length + ' logged');
+    var chk = all.reduce(function (n, r) { return n + openChecks(r); }, 0);
+    if (chk) row('To verify', chk + ' open check' + (chk > 1 ? 's' : ''));
+    row('Overdue', overdue ? overdue + ' check-back' + (overdue > 1 ? 's' : '') + ' waiting' : 'none');
+    var call = { 'It worked': 0, 'Partly': 0, 'It did not': 0 };
+    logged.forEach(function (r) { if (call[r.outcome.call] !== undefined) call[r.outcome.call] += 1; });
+    if (logged.length) row('Outcomes', call['It worked'] + ' worked, ' + call['Partly'] + ' partly, ' + call['It did not'] + ' did not');
+    var ans = [], tally = {};
+    all.forEach(function (r) { (r.answers || []).forEach(function (a) {
+      ans.push(a);
+      if (a.conf && a.conf !== CONF[0]) tally[a.q] = (tally[a.q] || 0) + 1;
+    }); });
+    if (ans.length) {
+      var un = ans.filter(function (a) { return a.conf && a.conf !== CONF[0]; }).length;
+      row('Unverified', Math.round(un / ans.length * 100) + '% of your answers were belief or unknown');
+    }
+    var top = Object.keys(tally).sort(function (a, b) { return tally[b] - tally[a]; }).slice(0, 3);
+    var body = el('div', { class: 'body' }, dl);
+    if (top.length) {
+      var ol = el('ol', { class: 'steps' });
+      top.forEach(function (q) { ol.append(el('li', {}, el('span', {}, q + ' (' + tally[q] + ' times)'))); });
+      body.append(el('h3', {}, 'Where you are least sure'), ol);
+    }
+    var mt = {};
+    logged.forEach(function (r) { if (r.outcome.missed) mt[r.outcome.missed] = (mt[r.outcome.missed] || 0) + 1; });
+    var mtop = Object.keys(mt).sort(function (a, b) { return mt[b] - mt[a]; }).slice(0, 3);
+    if (mtop.length) {
+      var ol2 = el('ol', { class: 'steps' });
+      mtop.forEach(function (q) { ol2.append(el('li', {}, el('span', {}, q + ' (' + mt[q] + ' times)'))); });
+      body.append(el('h3', {}, 'What would have caught your misses'), ol2);
+    }
+    var hi = logged.filter(function (r) { return assumedCount(r) >= 3; }), lo = logged.filter(function (r) { return assumedCount(r) < 3; });
+    var ok = function (a) { return a.filter(function (r) { return r.outcome.call === 'It worked'; }).length; };
+    if (hi.length >= 2 && lo.length >= 2) {
+      body.append(el('p', { class: 'hint' }, 'Decisions with 3 or more unverified answers worked ' + ok(hi) + ' of ' + hi.length + ' times. Those with fewer worked ' + ok(lo) + ' of ' + lo.length + '.'));
+    } else {
+      body.append(el('p', { class: 'hint' }, 'Log results on a few more decisions and this will show whether unverified answers lead to worse outcomes.'));
+    }
+    root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'Review how you decide')), body));
+  }
+
+  function renderBackup(root) {
+    var ta = el('textarea', { readonly: 'readonly', 'aria-label': 'Backup text', placeholder: 'Your backup text appears here after you tap Copy backup.' });
+    var copyB = el('button', { class: 'btn small', type: 'button' }, 'Copy backup');
+    copyB.addEventListener('click', function () {
+      var json = JSON.stringify({ app: 'lmc', records: state.records, jots: state.jots });
+      ta.value = json;
+      var label = 'Copy backup';
+      function done(m) { copyB.textContent = m; setTimeout(function () { copyB.textContent = label; }, 1800); }
+      function sel() { ta.select(); done('Selected, tap Copy'); }
+      try { navigator.clipboard.writeText(json).then(function () { done('Copied'); }, sel); } catch (e) { sel(); }
+    });
+    var inp = textField('Paste a backup here to restore', '', function () {}, 'Paste the text you copied earlier.');
+    var restore = el('button', { class: 'btn ghost small', type: 'button' }, 'Restore');
+    restore.addEventListener('click', function () {
+      var raw = inp.control.value.trim();
+      if (!raw) { toast('Paste a backup first.'); return; }
+      try {
+        var o = JSON.parse(raw), n = 0;
+        if (!o || !Array.isArray(o.records)) throw new Error('bad');
+        var have = {}; state.records.forEach(function (r) { have[r.id] = 1; });
+        o.records.forEach(function (r) { if (r && r.id && !have[r.id]) { state.records.push(r); n += 1; } });
+        var hj = {}; state.jots.forEach(function (j) { hj[j.id] = 1; });
+        (o.jots || []).forEach(function (j) { if (j && j.id && !hj[j.id]) state.jots.push(j); });
+        persist(); renderToday(); toast('Restored ' + n + ' decision' + (n === 1 ? '' : 's') + '.');
+      } catch (e) { toast('That does not look like a backup.'); }
+    });
+    root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'Back up or restore')),
+      el('div', { class: 'body' }, el('p', { class: 'hint' }, 'Decisions are stored only in this browser. Copy a backup now and then and paste it into Notes or an email to yourself.'), ta,
+        el('div', { class: 'actions' }, copyB), inp.node, el('div', { class: 'actions' }, restore))));
+  }
+
+  /* ---------- Guided flow ---------- */
+  var QS = {
+    Lead: [
+      { t: 'Direction', q: 'What outcome are we committing to, in one sentence?', h: 'Say it so a new franchisee could repeat it.', ph: 'Example: Every franchisee can take a shared lead within 24 hours.' },
+      { t: 'Premise', q: 'What has to be true for this direction to be right, and what have we actually verified?', h: 'Separate what you have seen from what you hope.', ph: 'Example: Franchisees have spare technician capacity. We have checked with three, not thirty.' },
+      { t: 'Alignment', q: 'What will our people or franchisees have to do differently, and have we asked them?', h: 'Ask, do not assume.', ph: 'Example: Owners must answer leads within 24 hours. We have not asked them yet.' },
+      { t: 'Trade-off', q: 'What will this cost us, and what are we giving up to pay for it?', h: 'Every yes costs a no.', ph: 'Example: Two quarters of leadership time and the retail push we had planned.' },
+      { t: 'Exit', q: 'What would make us change course, and how will we know?', h: 'Set the tripwire now, while you are calm.', ph: 'Example: Fewer than five accepted leads per territory by month 6.' }
+    ],
+    Manage: [
+      { t: 'Measure', q: 'Which number tells us this is working, and what is it today?', h: 'A number, not a feeling.', ph: 'Example: Booked service calls per technician per week. Today it is 11.' },
+      { t: 'Variance', q: 'What does the data show versus what we expected?', h: 'Compare with the plan, not with last month.', ph: 'Example: The plan is 14. Three locations are under 9.' },
+      { t: 'Root cause', q: 'Is the root cause a system, a process, or a person?', h: 'Keep asking why until you reach something you can change.', ph: 'Example: Process. Dispatch happens after 10am at the weak locations.' },
+      { t: 'Correction', q: 'What is the smallest correction that fixes the cause?', h: 'Smaller than your first instinct.', ph: 'Example: Dispatch by 8am using the shared board.' },
+      { t: 'Side effects', q: 'What could make this correction backfire or make something else worse?', h: 'What else moves when this moves?', ph: 'Example: Earlier dispatch could raise overtime and push back-office work later.' }
+    ],
+    Coach: [
+      { t: 'Facts', q: 'What exactly did I see or measure first-hand?', h: 'What you saw, not what you concluded.', ph: 'Example: Three late arrivals in two weeks, noted on the schedule.' },
+      { t: 'Gap type', q: 'Is this a skill gap, a will gap, or a clarity gap?', h: 'The fix is different for each.', ph: 'Example: Likely clarity. The start time was never written down.' },
+      { t: 'Clarity', q: 'What have I done to make the expectation clear?', h: 'Was it said, written down, and understood?', ph: 'Example: Said it once in a meeting. Nothing in writing.' },
+      { t: 'Ownership', q: 'What is theirs to own, and what is mine?', h: 'Do not carry what is theirs.', ph: 'Example: Theirs: arriving on time. Mine: a clear standard and honest feedback.' },
+      { t: 'Evidence', q: 'What would I need to see to know the change has stuck?', h: 'Behavior you can observe, not intent.', ph: 'Example: On site by 7:30 for four weeks in a row, without a reminder.' }
+    ]
+  };
+  var CONF = ['I know this', 'I believe this', 'I do not know'];
+  var STOIC = 'Stay with what is in your control. Separate what you saw from what you assume.';
+  function qsFor(D) { return QS[D.discipline] || QS.Lead; }
+  function blankData() {
+    return { discipline: filterDisc || '', decision: '', why: '', nowcost: '', answers: [{}, {}, {}, {}, {}],
+      options: { alt1: '', alt2: '', why: '' }, who: [{ name: '', dec: '', out: '' }, { name: '', dec: '', out: '' }], blind: { missing: '', oppose: '', change: '' },
+      how: { plan: '', measure: '', needs: '' }, verdict: '', action: '', owner: '', due: '', check: '' };
+  }
+  function startFlow(jot, quick) {
+    var data = blankData();
+    if (jot) data.decision = jot.text;
+    flow = { data: data, i: 0, paused: false, jot: jot ? jot.id : null, quick: !!quick };
+    renderFlow();
+  }
+  function resumeFlow() {
+    var d = state.draft;
+    if (!d || !d.data || !d.data.answers) { state.draft = null; persist(); startFlow(null); toast('The old draft used an earlier format, so we started fresh.'); return; }
+    flow = { data: d.data, i: d.i || 0, paused: !!d.paused, jot: d.jot || null, quick: !!d.quick };
+    if (!d.data.options) { d.data.options = { alt1: '', alt2: '', why: '' }; if (flow.i >= 2) flow.i += 1; }
+    renderFlow();
+  }
+  function saveDraft() {
+    if (!flow) return;
+    state.draft = { data: flow.data, i: flow.i, paused: flow.paused, jot: flow.jot, quick: flow.quick };
+    persist();
+  }
+  function stepList() { return flow.quick ? ['kind', 'why', 'options', 'q0', 'q1', 'q4', 'who', 'when'] : ['kind', 'why', 'options', 'q0', 'q1', 'q2', 'q3', 'q4', 'who', 'blind', 'how', 'when']; }
+  function unverified(D) {
+    var QL = qsFor(D), out = [];
+    D.answers.forEach(function (a, k) { if ((a.a || '').trim() && a.conf && a.conf !== CONF[0]) out.push({ q: QL[k].q, conf: a.conf }); });
+    return out;
+  }
+  function openChecks(r) { return (r.checks || []).filter(function (c) { return !c.done; }).length; }
+  function stakeholders(D) { return D.who.filter(function (w) { return w.name.trim(); }); }
+  function assumedCount(r) { return (r.answers || []).filter(function (x) { return x.a && x.conf && x.conf !== CONF[0]; }).length; }
+
+  function renderFlow() {
+    clearInterval(timer);
+    app.replaceChildren();
+    var steps = stepList();
+    if (flow.i >= steps.length) flow.i = steps.length - 1;
+    var step = steps[flow.i];
+    var D = flow.data;
+    var pausing = step === 'blind' && !flow.paused;
+    var PH = { Why: 'Phase: WHY', How: 'Phase: HOW', When: 'Phase: WHEN' };
+
+    var cancel = el('button', { class: 'linkbtn', type: 'button' }, 'Save and exit');
+    cancel.addEventListener('click', function () { saveDraft(); renderToday(); });
+    var pct = Math.round(((flow.i + 1) / steps.length) * 100);
+    var bar = el('div', { class: 'bar' }, el('i', { style: 'width:' + pct + '%' }));
+    app.append(el('div', { class: 'progress' },
+      el('div', { class: 'row' }, el('span', { class: 'mono' }, 'Step ' + (flow.i + 1) + ' of ' + steps.length), cancel), bar));
+
+    if (flow.gate) {
+      var ul = el('ol', { class: 'steps' });
+      unverified(D).forEach(function (x) { ul.append(el('li', {}, el('b', {}, x.q + ' '), el('span', {}, '(' + x.conf + ')'))); });
+      var sw = el('button', { class: 'btn', type: 'button' }, 'Switch to Test first');
+      sw.addEventListener('click', function () { D.verdict = 'Test first'; flow.gate = false; finish(); });
+      var go2 = el('button', { class: 'btn ghost', type: 'button' }, 'Go anyway');
+      go2.addEventListener('click', function () { flow.gateOk = true; flow.gate = false; finish(); });
+      var bk = el('button', { class: 'linkbtn', type: 'button' }, 'Back to my answers');
+      bk.addEventListener('click', function () { flow.gate = false; renderFlow(); });
+      app.append(el('div', { class: 'stack' }, el('span', { class: 'eyebrow' }, 'Before you go'), el('h2', {}, 'You are about to go on answers you have not verified.'),
+        el('p', { class: 'hint' }, 'These are beliefs or unknowns. Test first lets you check them before you commit. Going anyway is a fair choice if you make it on purpose.'),
+        ul, el('div', { class: 'stack tight' }, sw, go2, bk)));
+      return;
+    }
+
+    var main = el('div', { class: 'stack' });
+    var next = el('button', { class: 'btn', type: 'button' }, flow.i === steps.length - 1 ? 'Save decision' : 'Next');
+    var back = el('button', { class: 'btn ghost', type: 'button' }, 'Back');
+    var DC = DISC[D.discipline] || { ph: 'Example: Should we offer shared leads to franchisees in two more territories?', act: 'Example: Ask four franchisees for their open technician hours this month.' };
+
+    if (step === 'kind') {
+      main.append(el('h2', {}, 'What kind of decision is this?'), el('p', { class: 'hint' }, 'Pick the one that fits best. It sets your five critical questions and sorts your list.'));
+      var kn = gid('k'), kw = el('div', { class: 'chips col', role: 'radiogroup' });
+      Object.keys(DISC).forEach(function (k, i) {
+        var inp = el('input', { type: 'radio', name: kn, id: kn + i, value: k });
+        if (D.discipline === k) inp.checked = true;
+        inp.addEventListener('change', function () { D.discipline = k; saveDraft(); });
+        kw.append(el('label', { class: 'chip disc', for: kn + i, 'data-d': k }, inp, el('span', {}, el('strong', {}, k + ': ' + DISC[k].line), el('small', {}, DISC[k].desc))));
+      });
+      main.append(kw);
+    } else if (step === 'why') {
+      main.append(el('span', { class: 'eyebrow' }, PH.Why), el('h2', {}, 'Why are we deciding this?'),
+        el('p', { class: 'hint' }, 'Name the decision, then the reason it matters now.'));
+      main.append(textField('The decision', D.decision, function (v) { D.decision = v; saveDraft(); }, DC.ph).node,
+        textField('Why does this matter now?', D.why, function (v) { D.why = v; saveDraft(); }, 'Example: A competitor is signing the same accounts this quarter.').node,
+        textField('What happens if we do nothing?', D.nowcost, function (v) { D.nowcost = v; saveDraft(); }, 'Example: We lose two accounts by spring.').node);
+    } else if (step === 'options') {
+      main.append(el('span', { class: 'eyebrow' }, PH.Why), el('h2', {}, 'What else could we do?'),
+        el('p', { class: 'hint' }, 'Weak decisions are often a yes or no with no third path. Name at least one real alternative.'));
+      main.append(textField('One other option we considered', D.options.alt1, function (v) { D.options.alt1 = v; saveDraft(); }, 'Example: Pilot with two locations first.').node,
+        textField('A third option, or the opposite of this one', D.options.alt2, function (v) { D.options.alt2 = v; saveDraft(); }, 'Example: Fix the current process instead of replacing it.').node,
+        textField('Why is our choice better than these?', D.options.why, function (v) { D.options.why = v; saveDraft(); }, 'Example: It is the only one that fixes the cause.').node);
+    } else if (step.charAt(0) === 'q') {
+      var qi = +step.slice(1), Q = qsFor(D)[qi], A = D.answers[qi];
+      main.append(el('span', { class: 'eyebrow' }, D.discipline + (flow.quick ? ' / quick check / ' : ' / question ' + (qi + 1) + ' of 5 / ') + Q.t), el('h2', {}, Q.q),
+        el('p', { class: 'hint' }, Q.h), qi === 0 ? el('p', { class: 'hint' }, STOIC) : null);
+      main.append(textField('Your answer', A.a, function (v) { A.a = v; saveDraft(); }, Q.ph).node);
+      var chalBox = el('div', { class: 'stack tight' });
+      var chalUpdate = function () {
+        chalBox.replaceChildren();
+        if (A.conf === CONF[1]) chalBox.append(textField('Challenge it: what would prove this wrong?', A.chal, function (v) { A.chal = v; saveDraft(); }, 'Example: If two of the five owners we ask say no.').node);
+        else if (A.conf === CONF[2]) chalBox.append(textField('Who could verify this, and by when?', A.chal, function (v) { A.chal = v; saveDraft(); }, 'Example: Ask the three site leads by Friday.').node);
+      };
+      main.append(el('div', { class: 'field' }, el('span', { class: 'lab' }, 'How sure are you?'),
+        chipGroup(CONF, A.conf, function (v) { if (A.conf !== v) A.chal = ''; A.conf = v; saveDraft(); chalUpdate(); })), chalBox);
+      chalUpdate();
+    } else if (step === 'who') {
+      main.append(el('h2', {}, 'Who is affected?'),
+        el('p', { class: 'hint' }, 'People, teams or customers touched by the decision itself, and by how it turns out. Start with the people you would not want to surprise.'));
+      D.who.forEach(function (w, k) {
+        main.append(el('div', { class: 'card stack tight' },
+          textField('Who (person or group) ' + (k + 1), w.name, function (v) { w.name = v; saveDraft(); }, 'Example: Franchise owners in the north region', 'input').node,
+          textField('How does the decision affect them?', w.dec, function (v) { w.dec = v; saveDraft(); }, 'Example: They must change their dispatch routine.').node,
+          textField('How does the outcome affect them?', w.out, function (v) { w.out = v; saveDraft(); }, 'Example: If it works, more booked jobs. If not, lost goodwill.').node));
+      });
+      if (D.who.length < 5) {
+        var addw = el('button', { class: 'btn ghost small', type: 'button' }, 'Add another person or group');
+        addw.addEventListener('click', function () { D.who.push({ name: '', dec: '', out: '' }); saveDraft(); renderFlow(); });
+        main.append(addw);
+      }
+    } else if (step === 'blind') {
+      if (pausing) {
+        var count = el('div', { class: 'count', 'aria-live': 'polite' }, '5');
+        var pbar = el('i', {});
+        main.append(el('div', { class: 'card pause' }, el('span', { class: 'lab' }, 'Pause'), count,
+          el('p', {}, 'You have answered what you could see. Now look for what you cannot.'), el('div', { class: 'bar' }, pbar)));
+        var left = 5;
+        setTimeout(function () { pbar.style.width = '100%'; }, 30);
+        timer = setInterval(function () {
+          left -= 1;
+          count.textContent = String(Math.max(left, 0));
+          if (left <= 0) { clearInterval(timer); flow.paused = true; saveDraft(); renderFlow(); }
+        }, 1000);
+      } else {
+        main.append(el('h2', {}, 'What might we not be considering?'),
+          el('p', { class: 'hint' }, 'A short answer is fine. "I do not know yet" is a useful answer.'));
+        main.append(textField('What information are we missing, and who could tell us?', D.blind.missing, function (v) { D.blind.missing = v; saveDraft(); }, 'Example: We have not asked the technicians who would do the work.').node,
+          textField('What would someone who disagrees with us say?', D.blind.oppose, function (v) { D.blind.oppose = v; saveDraft(); }, 'Example: It is too much change in a busy season.').node,
+          textField('What could change in the next six months that we are not planning for?', D.blind.change, function (v) { D.blind.change = v; saveDraft(); }, 'Example: A supplier price rise, a key person leaving.').node);
+      }
+    } else if (step === 'how') {
+      main.append(el('span', { class: 'eyebrow' }, PH.How), el('h2', {}, 'How will we do it?'),
+        el('p', { class: 'hint' }, 'Plain steps, and how you will know it is working.'));
+      main.append(textField('The plan in a few steps', D.how.plan, function (v) { D.how.plan = v; saveDraft(); }, 'Example: 1. Pilot in two locations. 2. Review after 30 days. 3. Roll out.').node,
+        textField('How will we know it is working?', D.how.measure, function (v) { D.how.measure = v; saveDraft(); }, 'Example: Booked jobs per technician reaches 14.').node,
+        textField('What and who do we need?', D.how.needs, function (v) { D.how.needs = v; saveDraft(); }, 'Example: Two site leads, one hour a week, the shared board.').node);
+    } else if (step === 'when') {
+      main.append(el('span', { class: 'eyebrow' }, PH.When), el('h2', {}, 'When will you act?'), el('p', { class: 'hint' }, 'Pick one, then give it one first step and a date.'),
+        chipGroup(VERDICTS, D.verdict, function (v) { D.verdict = v; saveDraft(); }, 'warnset'));
+      main.append(textField('Your first step', D.action, function (v) { D.action = v; saveDraft(); }, DC.act, 'input').node);
+      main.append(textField('Who owns it (optional)', D.owner, function (v) { D.owner = v; saveDraft(); }, 'Name or team', 'input').node);
+      var did = gid('f'), cid = gid('f');
+      var due = el('input', { type: 'date', id: did });
+      var chk = el('input', { type: 'date', id: cid });
+      due.value = D.due || ''; chk.value = D.check || '';
+      due.addEventListener('change', function () {
+        D.due = due.value;
+        if (due.value && !D.check) { D.check = plusDays(due.value, 14); chk.value = D.check; }
+        saveDraft();
+      });
+      chk.addEventListener('change', function () { D.check = chk.value; saveDraft(); });
+      main.append(el('div', { class: 'two' },
+        el('div', { class: 'field' }, el('label', { class: 'q', for: did }, 'Do it by'), due),
+        el('div', { class: 'field' }, el('label', { class: 'q', for: cid }, 'Check back on'), chk)));
+    }
+    app.append(main);
+
+    function softMsg() {
+      if (step === 'options' && !D.options.alt1.trim()) return 'Most weak decisions have no alternative.';
+      if (step.charAt(0) === 'q') {
+        var A = D.answers[+step.slice(1)];
+        if (!(A.a || '').trim()) return 'No answer yet.';
+        if (!A.conf) return 'How sure are you?';
+        if (A.conf === CONF[2] && !(A.chal || '').trim()) return 'Who could verify this?';
+      }
+      if (step === 'who' && !stakeholders(D).length) return 'No one named yet.';
+      return '';
+    }
+    function valid() {
+      if (step === 'kind') return D.discipline ? '' : 'Pick Lead, Manage or Coach.';
+      if (step === 'why') return D.decision.trim() ? '' : 'Describe the decision first.';
+      if (step === 'when') {
+        if (!D.verdict) return 'Pick what you will do.';
+        if (!HALT[D.verdict]) {
+          if (!D.action.trim()) return 'Write one first step.';
+          if (!D.due) return 'Choose a do-by date.';
+          if (!D.check) return 'Choose a check-back date.';
+        }
+      }
+      return '';
+    }
+    back.addEventListener('click', function () {
+      if (flow.i === 0) { saveDraft(); renderToday(); return; }
+      flow.i -= 1; saveDraft(); renderFlow(); window.scrollTo(0, 0);
+    });
+    next.addEventListener('click', function () {
+      var msg = valid();
+      if (msg) { toast(msg); return; }
+      var sm = softMsg();
+      if (sm && flow.nudged !== flow.i) { flow.nudged = flow.i; toast(sm + ' Tap Next again to skip.'); return; }
+      if (flow.i === steps.length - 1) {
+        if (D.verdict === 'Go' && !flow.gateOk && unverified(D).length >= (flow.quick ? 2 : 3)) { flow.gate = true; renderFlow(); window.scrollTo(0, 0); return; }
+        finish(); return;
+      }
+      flow.i += 1; saveDraft(); renderFlow(); window.scrollTo(0, 0);
+    });
+    if (pausing) next.disabled = true;
+    app.append(el('div', { class: 'flowbar' }, el('div', {}, back, next)));
+  }
+
+  function finish() {
+    var D = flow.data, now = new Date(), t = function (x) { return ((x || '').trim()) || '(no answer)'; };
+    var QL = qsFor(D);
+    var qk = flow.quick;
+    var md = '# Decision: ' + D.decision.trim() + '\n' + D.discipline + (qk ? ' (quick check)' : '') + ' / ' + stamp(now) + '\n\n## WHY\nWhy now: ' + t(D.why) + '\nIf we do nothing: ' + t(D.nowcost) + '\nOptions considered: ' + t(D.options.alt1) + (D.options.alt2.trim() ? '; ' + D.options.alt2.trim() : '') + '\nWhy this one: ' + t(D.options.why) + '\n\n## Critical questions\n';
+    D.answers.forEach(function (a, k) { if (qk && !(a.a || '').trim()) return; md += (k + 1) + '. ' + QL[k].t + ': ' + QL[k].q + '\n   ' + t(a.a) + ' [' + (a.conf || 'not rated') + ']\n' + ((a.chal || '').trim() ? '   ' + (a.conf === CONF[2] ? 'To verify: ' : 'Would prove it wrong: ') + a.chal.trim() + '\n' : ''); });
+    md += '\n## Who is affected\n';
+    stakeholders(D).forEach(function (w) { md += '- ' + w.name.trim() + '\n  Decision: ' + t(w.dec) + '\n  Outcome: ' + t(w.out) + '\n'; });
+    if (!qk) {
+      md += '\n## What we might not be considering\nMissing: ' + t(D.blind.missing) + '\nDisagreement: ' + t(D.blind.oppose) + '\nCould change: ' + t(D.blind.change);
+      md += '\n\n## HOW\nPlan: ' + t(D.how.plan) + '\nWorking if: ' + t(D.how.measure) + '\nNeeds: ' + t(D.how.needs);
+    }
+    md += '\n\n## WHEN\nVerdict: ' + D.verdict + '\nFirst step: ' + (D.action.trim() || '-') + '\nOwner: ' + (D.owner.trim() || '-') + '\nDo by: ' + (D.due || '-') + '\nCheck back: ' + (D.check || '-');
+    state.records.unshift({
+      id: uid(), discipline: D.discipline, title: short(D.decision, 80), stamp: stamp(now), md: md, why: D.why.trim(),
+      who: stakeholders(D).map(function (w) { return { name: w.name.trim(), dec: w.dec.trim(), out: w.out.trim() }; }),
+      quick: !!qk, options: { alt1: D.options.alt1.trim(), alt2: D.options.alt2.trim(), why: D.options.why.trim() }, challenges: [],
+      checks: D.answers.map(function (a, k) { return a.conf === CONF[2] && (a.a || '').trim() ? { q: QL[k].q, t: (a.chal || '').trim(), done: false } : null; }).filter(Boolean),
+      answers: D.answers.map(function (a, k) { return { q: QL[k].q, a: (a.a || '').trim(), conf: a.conf, chal: (a.chal || '').trim() }; }).filter(function (x) { return x.a; }),
+      decision: { verdict: D.verdict, action: D.action.trim(), owner: D.owner.trim(), due: D.due, check: D.check },
+      actionDone: false, outcome: null
+    });
+    if (flow.jot) state.jots = state.jots.filter(function (j) { return j.id !== flow.jot; });
+    state.draft = null;
+    persist();
+    renderToday();
+    toast('Saved. Your first step is on the list.');
+    window.scrollTo(0, 0);
+  }
+
+  load();
+  renderToday();
+})();
+</script>
+<script>
+if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+}
+</script>
+</body>
+</html>
