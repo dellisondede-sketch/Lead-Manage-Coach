@@ -85,6 +85,8 @@ textarea { resize: vertical; min-height: 96px; line-height: 1.45; }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.75; }
 input:focus-visible, textarea:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 select { width: 100%; font: inherit; font-size: 16px; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 11px 12px; min-height: 48px; }
+.lblrow { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.lblrow .linkbtn { flex: none; padding: 0; min-height: 28px; }
 .btn {
   font: inherit; font-weight: 600; font-size: 17px; min-height: 52px; padding: 0 20px; border-radius: 8px;
   border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); cursor: pointer;
@@ -331,13 +333,48 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     });
     return wrap;
   }
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var activeRec = null;
+  function stopMic() { try { if (activeRec) activeRec.abort(); } catch (e) {} activeRec = null; }
+  function micBtn(c, onInput) {
+    if (!SR) return null;
+    var b = el('button', { class: 'linkbtn', type: 'button', 'aria-label': 'Speak your answer' }, 'Speak');
+    var on = false, rec = null;
+    function off() { on = false; b.textContent = 'Speak'; }
+    b.addEventListener('click', function () {
+      if (on && rec) { try { rec.stop(); } catch (e) {} return; }
+      stopMic();
+      try {
+        rec = new SR();
+        rec.lang = (navigator.language || 'en-US');
+        rec.interimResults = false;
+        rec.continuous = true;
+        rec.onresult = function (e) {
+          var t = '';
+          for (var i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) t += e.results[i][0].transcript + ' ';
+          t = t.trim();
+          if (t) { c.value = (c.value ? c.value.replace(/\s+$/, '') + ' ' : '') + t; onInput(c.value); }
+        };
+        rec.onerror = function (e) {
+          off();
+          toast(e && (e.error === 'not-allowed' || e.error === 'service-not-allowed') ? 'The microphone is blocked here. Use the microphone on your keyboard instead.' : 'Could not hear that. Try again, or use the keyboard microphone.');
+        };
+        rec.onend = function () { off(); if (activeRec === rec) activeRec = null; };
+        activeRec = rec;
+        rec.start();
+        on = true; b.textContent = 'Stop';
+      } catch (err) { off(); toast('Speaking is not available here. Use the microphone on your keyboard.'); }
+    });
+    return b;
+  }
   function textField(label, value, onInput, ph, kind) {
     var id = gid('f');
     var c = kind === 'input' ? el('input', { type: 'text', id: id }) : el('textarea', { id: id });
     if (ph) c.setAttribute('placeholder', ph);
     c.value = value || '';
     c.addEventListener('input', function () { onInput(c.value); });
-    return { node: el('div', { class: 'field' }, el('label', { class: 'q', for: id }, label), c), control: c };
+    var mic = kind === 'input' ? null : micBtn(c, onInput);
+    return { node: el('div', { class: 'field' }, mic ? el('div', { class: 'lblrow' }, el('label', { class: 'q', for: id }, label), mic) : el('label', { class: 'q', for: id }, label), c), control: c };
   }
 
   /* ---------- Status ---------- */
@@ -356,6 +393,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
   /* ---------- Today screen ---------- */
   function renderToday() {
     clearInterval(timer);
+    stopMic();
     flow = null;
     app.replaceChildren();
     var root = el('div', { class: 'stack' });
@@ -402,6 +440,21 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     root.append(el('h3', {}, filterDisc ? filterDisc + ' decisions' : 'Your decisions'));
     if (recs.length) {
       root.append(el('div', { class: 'banner' }, el('span', { class: 'lab' }, hot ? 'Needs you now' : 'Nothing overdue'), el('strong', {}, hot + ' due, ' + open + ' with a next step open')));
+      var today = dkey(new Date()), horizon = plusDays(today, 7), up = [];
+      recs.forEach(function (r) {
+        var d = r.decision || {};
+        if (r.outcome || HALT[d.verdict]) return;
+        if (d.action && !r.actionDone && d.due && d.due <= horizon) up.push({ date: d.due, what: 'Step due', r: r });
+        if (d.check && d.check <= horizon) up.push({ date: d.check, what: 'Check back', r: r });
+      });
+      up.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      if (up.length) {
+        var uc = el('div', { class: 'card' }, el('h3', {}, 'Coming up (next 7 days)'));
+        up.slice(0, 6).forEach(function (x) {
+          uc.append(el('div', { class: 'rep-row' }, el('span', { class: 'k' }, (x.date < today ? 'Overdue, ' : '') + x.what + ': ' + x.date), el('span', { class: 'v' }, x.r.title)));
+        });
+        root.append(uc);
+      }
       var list = el('div', { class: 'stack tight' });
       recs.forEach(function (r) { list.append(recordCard(r)); });
       root.append(list);
@@ -524,7 +577,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     var editBtn = el('button', { class: 'btn small ghost', type: 'button' }, 'Edit plan and dates');
     editBtn.addEventListener('click', function () {
       if (editHost.childNodes.length) { editHost.replaceChildren(); return; }
-      var E = { verdict: d.verdict, action: d.action || '', owner: d.owner || '', due: d.due || '', check: d.check || '', note: '' };
+      var E = { title: r.title, verdict: d.verdict, action: d.action || '', owner: d.owner || '', due: d.due || '', check: d.check || '', note: '' };
       var did = gid('f'), cid = gid('f');
       var due = el('input', { type: 'date', id: did }), chk = el('input', { type: 'date', id: cid });
       due.value = E.due; chk.value = E.check;
@@ -538,6 +591,11 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
           if (!E.due) { toast('Choose a do-by date.'); return; }
           if (!E.check) { toast('Choose a check-back date.'); return; }
         }
+        if (E.title.trim() && E.title.trim() !== r.title) {
+          var nt = E.title.trim();
+          r.md = r.md.replace(/^# Decision: .*/, function () { return '# Decision: ' + nt; });
+          r.title = short(nt, 80);
+        }
         r.decision = { verdict: E.verdict, action: E.action.trim(), owner: E.owner.trim(), due: E.due, check: E.check };
         r.updates = r.updates || [];
         r.updates.push({ stamp: stamp(new Date()), note: E.note.trim() });
@@ -546,6 +604,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
         persist(); renderToday(); toast('Updated.');
       });
       editHost.append(el('div', { class: 'card stack tight' },
+        textField('Decision title', E.title, function (v) { E.title = v; }, '', 'input').node,
         chipGroup(VERDICTS, E.verdict, function (v) { E.verdict = v; }, 'warnset'),
         textField('First step', E.action, function (v) { E.action = v; }, '', 'input').node,
         textField('Owner', E.owner, function (v) { E.owner = v; }, 'Name or team', 'input').node,
@@ -825,6 +884,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
 
   function renderFlow() {
     clearInterval(timer);
+    stopMic();
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
     app.replaceChildren();
     var steps = stepList();
@@ -880,7 +940,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
         textField('Why does this matter now?', D.why, function (v) { D.why = v; saveDraft(); }, 'Example: A competitor is signing the same accounts this quarter.').node,
         textField('What happens if we do nothing?', D.nowcost, function (v) { D.nowcost = v; saveDraft(); }, 'Example: We lose two accounts by spring.').node,
         chipField('How easily could we undo it?', REVERS, D.reversible, function (v) { D.reversible = v; saveDraft(); }),
-        el('p', { class: 'hint' }, 'Tip: tap the microphone on your keyboard to speak your answers.'));
+        el('p', { class: 'hint' }, SR ? 'Tip: tap Speak above a box to dictate, or use the microphone on your keyboard.' : 'Tip: tap the microphone on your keyboard to speak your answers.'));
     } else if (step === 'options') {
       main.append(el('span', { class: 'eyebrow' }, PH.Why), el('h2', {}, 'What else could we do?'),
         el('p', { class: 'hint' }, 'Weak decisions are often a yes or no with no third path. Name at least one real alternative.'));
@@ -890,7 +950,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     } else if (step.charAt(0) === 'q') {
       var qi = +step.slice(1), Q = qsFor(D)[qi], A = D.answers[qi];
       main.append(el('span', { class: 'eyebrow' }, D.discipline + (flow.quick ? ' / quick check / ' : ' / question ' + (qi + 1) + ' of 5 / ') + Q.t), el('h2', {}, Q.q),
-        el('p', { class: 'hint' }, Q.h), qi === 0 ? el('p', { class: 'hint' }, STOIC) : null, qi === 0 ? el('p', { class: 'hint' }, 'Tip: tap the microphone on your keyboard to speak your answer.') : null);
+        el('p', { class: 'hint' }, Q.h), qi === 0 ? el('p', { class: 'hint' }, STOIC) : null, qi === 0 ? el('p', { class: 'hint' }, SR ? 'Tip: tap Speak above the box to dictate, or use the microphone on your keyboard.' : 'Tip: tap the microphone on your keyboard to speak your answer.') : null);
       if (Q.c) main.append(chipField('Pick one', Q.c, A.pick, function (v) { A.pick = v; saveDraft(); }));
       main.append(textField(Q.c ? 'Explain it' : 'Your answer', A.a, function (v) { A.a = v; saveDraft(); }, Q.ph).node);
       var chalBox = el('div', { class: 'stack tight' });
