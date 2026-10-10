@@ -337,8 +337,11 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
   var activeRec = null;
   function stopMic() { try { if (activeRec) activeRec.abort(); } catch (e) {} activeRec = null; }
   function micBtn(c, onInput) {
-    if (!SR) return null;
     var b = el('button', { class: 'linkbtn', type: 'button', 'aria-label': 'Speak your answer' }, 'Speak');
+    if (!SR) {
+      b.addEventListener('click', function () { c.focus(); toast('Tap the microphone key on your keyboard, then talk.'); });
+      return b;
+    }
     var on = false, rec = null;
     function off() { on = false; b.textContent = 'Speak'; }
     b.addEventListener('click', function () {
@@ -940,7 +943,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
         textField('Why does this matter now?', D.why, function (v) { D.why = v; saveDraft(); }, 'Example: A competitor is signing the same accounts this quarter.').node,
         textField('What happens if we do nothing?', D.nowcost, function (v) { D.nowcost = v; saveDraft(); }, 'Example: We lose two accounts by spring.').node,
         chipField('How easily could we undo it?', REVERS, D.reversible, function (v) { D.reversible = v; saveDraft(); }),
-        el('p', { class: 'hint' }, SR ? 'Tip: tap Speak above a box to dictate, or use the microphone on your keyboard.' : 'Tip: tap the microphone on your keyboard to speak your answers.'));
+        el('p', { class: 'hint' }, 'Tip: tap Speak above a box, then use the microphone key on your keyboard if asked.'));
     } else if (step === 'options') {
       main.append(el('span', { class: 'eyebrow' }, PH.Why), el('h2', {}, 'What else could we do?'),
         el('p', { class: 'hint' }, 'Weak decisions are often a yes or no with no third path. Name at least one real alternative.'));
@@ -950,7 +953,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     } else if (step.charAt(0) === 'q') {
       var qi = +step.slice(1), Q = qsFor(D)[qi], A = D.answers[qi];
       main.append(el('span', { class: 'eyebrow' }, D.discipline + (flow.quick ? ' / quick check / ' : ' / question ' + (qi + 1) + ' of 5 / ') + Q.t), el('h2', {}, Q.q),
-        el('p', { class: 'hint' }, Q.h), qi === 0 ? el('p', { class: 'hint' }, STOIC) : null, qi === 0 ? el('p', { class: 'hint' }, SR ? 'Tip: tap Speak above the box to dictate, or use the microphone on your keyboard.' : 'Tip: tap the microphone on your keyboard to speak your answer.') : null);
+        el('p', { class: 'hint' }, Q.h), qi === 0 ? el('p', { class: 'hint' }, STOIC) : null, qi === 0 ? el('p', { class: 'hint' }, 'Tip: tap Speak above the box, then use the microphone key on your keyboard if asked.') : null);
       if (Q.c) main.append(chipField('Pick one', Q.c, A.pick, function (v) { A.pick = v; saveDraft(); }));
       main.append(textField(Q.c ? 'Explain it' : 'Your answer', A.a, function (v) { A.a = v; saveDraft(); }, Q.ph).node);
       var chalBox = el('div', { class: 'stack tight' });
