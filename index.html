@@ -537,22 +537,28 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       try {
         rec = new SR();
         rec.lang = (navigator.language || 'en-US');
-        rec.interimResults = false;
-        rec.continuous = true;
+        /* Write words in as they are heard. iPhones often never mark results final, so final-only text never arrived. */
+        var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Mac/.test(navigator.platform || '') && navigator.maxTouchPoints > 1);
+        rec.interimResults = true;
+        rec.continuous = !ios;
+        var base = (c.value || '').replace(/\s+$/, ''), got = false;
         rec.onresult = function (e) {
           var t = '';
-          for (var i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) t += e.results[i][0].transcript + ' ';
-          t = t.trim();
-          if (t) { c.value = (c.value ? c.value.replace(/\s+$/, '') + ' ' : '') + t; onInput(c.value); }
+          for (var i = 0; i < e.results.length; i++) t += e.results[i][0].transcript + ' ';
+          t = t.replace(/\s+/g, ' ').trim();
+          if (!t) return;
+          got = true;
+          c.value = (base ? base + ' ' : '') + t;
+          onInput(c.value);
         };
         rec.onerror = function (e) {
           off();
           toast(e && (e.error === 'not-allowed' || e.error === 'service-not-allowed') ? 'The microphone is blocked here. Use the microphone on your keyboard instead.' : 'Could not hear that. Try again, or use the keyboard microphone.');
         };
-        rec.onend = function () { off(); if (activeRec === rec) activeRec = null; };
+        rec.onend = function () { off(); if (activeRec === rec) activeRec = null; if (!got) toast('Did not catch any words. Tap Speak and try again, or use the microphone on your keyboard.'); };
         activeRec = rec;
         rec.start();
-        on = true; b.textContent = 'Stop';
+        on = true; b.textContent = 'Listening, tap to stop';
       } catch (err) { off(); toast('Speaking is not available here. Use the microphone on your keyboard.'); }
     });
     return b;
