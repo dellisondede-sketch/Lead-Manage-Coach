@@ -184,6 +184,9 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
 .ref .tag { font-family: var(--display); font-size: 17px; color: var(--coach); }
 .card.lazy details.entry { background: var(--field); }
 .pill.who { background: var(--surface); color: var(--fg); border-color: var(--fg); }
+.lazyline { margin: 2px 0 0; padding: 10px 12px; border-left: 3px solid var(--coach); background: var(--coach-soft); border-radius: 6px; font-size: 15px; max-width: 60ch; }
+.lazyline b { color: var(--coach); }
+.lazyline .linkbtn { padding: 0; min-height: 0; font-size: 15px; color: var(--coach); }
 .pill.lz { background: var(--coach-soft); color: var(--coach); border-color: var(--coach); }
 .card.lazy { border-left: 4px solid var(--coach); }
 .pill.kpi { background: var(--ks); color: var(--kc); border-color: var(--kc); }
@@ -627,6 +630,9 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       el('h1', {}, 'Lead, Manage, Coach'),
       el('span', { class: 'sub' }, 'Decision Matrix / ' + new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })),
       el('p', { class: 'lede' }, 'Slow down before a big call. Pick the discipline, tag the brand and franchisee, answer five critical questions, then choose your first step.'));
+    var more = el('button', { class: 'linkbtn', type: 'button' }, 'Read more');
+    more.addEventListener('click', function () { var d = document.getElementById('lazy-ref'); if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } });
+    head.append(el('p', { class: 'lazyline' }, el('b', {}, 'Laziness Theory: '), 'before adding work, ask what you could stop, automate, delegate or simplify. ', more));
     root.append(head);
     root.append(el('div', { class: 'field' }, el('span', { class: 'lab' }, 'I am using this as'),
       chipGroup(ROLES, state.role, function (v) { state.role = v; persist(); toast(v === 'AVP' ? 'Examples now fit AVP work with franchisees.' : 'Examples now fit franchisor leadership.'); }, 'seg')));
@@ -738,7 +744,8 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       el('li', {}, el('b', {}, 'How and when. '), el('span', {}, 'The plan, a first step, an owner and a date.')),
       el('li', {}, el('b', {}, 'Check back. '), el('span', {}, 'Compare what happened with what you expected.'))
     );
-    root.append(lazyRef('The Laziness Theory (reference)'));
+    var lref = lazyRef('The Laziness Theory (reference)'); lref.id = 'lazy-ref';
+    root.append(lref);
     root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'How it works')),
       el('div', { class: 'body' }, steps, el('p', { class: 'hint' }, 'Guiding idea: an idea is only an impression until you have checked it, and your effort belongs on what is in your control.'),
         el('p', { class: 'hint' }, 'In the Claude app, decisions also save to the shared team log: switch Show to Team to see everyone\'s, and run the monthly review from there. The Home Screen copy keeps decisions on this device only. Open report gives a one-page brief to share or print.'))));
