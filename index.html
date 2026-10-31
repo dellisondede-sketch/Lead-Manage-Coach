@@ -350,7 +350,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       (p.captures || []).forEach(function (c) { if (c && !c.done) state.jots.push({ id: c.id, text: c.text, stamp: c.stamp }); });
     } catch (e) {}
   }
-  function persist() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} syncUp(); }
+  function persist() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} syncUp(); schedulePriv(); }
 
   /* ---------- Shared team log (works in the Claude copy; the Home Screen copy stays on this device) ---------- */
   var DB = null, USER = null, ME = null, team = [], teamReady = false, viewMode = 'mine', lastJS = {}, pend = {}, names = {}, wq = Promise.resolve(), screen = 'today';
@@ -372,6 +372,38 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       if (lastJS[r.id] !== JSON.stringify(body(r))) { r.updated = Date.now(); lastJS[r.id] = JSON.stringify(body(r)); put(r); any = true; }
     });
     if (any) { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+  }
+  var privTimer = null, privReady = false;
+  function privDoc() { return DB.doc('data/users/' + ME + '/state'); }
+  function schedulePriv() {
+    if (!DB || !ME || !privReady) return;
+    clearTimeout(privTimer);
+    privTimer = setTimeout(function () {
+      state.privAt = Date.now();
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+      try { privDoc().set(JSON.parse(JSON.stringify({ jots: state.jots, draft: state.draft || null, role: state.role, gone: state.gone || [], at: state.privAt }))).catch(function () {}); } catch (e) {}
+    }, 1500);
+  }
+  function loadPrivate() {
+    var done = function () { privReady = true; persist(); refresh(); };
+    try {
+      privDoc().get().then(function (snap) {
+        var d = snap && snap.exists ? snap.data() : null;
+        if (d) {
+          var gone = (state.gone || []).slice();
+          (d.gone || []).forEach(function (g) { if (gone.indexOf(g) < 0) gone.push(g); });
+          state.gone = gone.slice(-300);
+          var have = {}; state.jots.forEach(function (j) { have[j.id] = 1; });
+          (d.jots || []).forEach(function (j) { if (j && j.id && !have[j.id] && gone.indexOf(j.id) < 0) state.jots.push(JSON.parse(JSON.stringify(j))); });
+          state.jots = state.jots.filter(function (j) { return gone.indexOf(j.id) < 0; });
+          if ((d.at || 0) > (state.privAt || 0)) {
+            if (d.role) state.role = d.role;
+            state.draft = d.draft ? JSON.parse(JSON.stringify(d.draft)) : null;
+          }
+        }
+        done();
+      }, done);
+    } catch (e) { done(); }
   }
   function removeShared(r) {
     if (!DB || !r.cloud) return;
@@ -434,6 +466,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       }).then(function (d) {
         if (!d) return;
         DB = d;
+        loadPrivate();
         DB.collection('decisions').onSnapshot(onTeam, function () { DB = null; teamReady = false; viewMode = 'mine'; refresh(); });
         refresh();
       }, function () {});
@@ -655,6 +688,17 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     });
     root.append(row);
 
+    var since = Date.now() - (state.lastBackup || 0), snooze = (state.backupSnooze || 0) > Date.now();
+    if (!DB && !(window.claude && window.claude.use) && (state.records.length || state.jots.length) && since > 7 * 864e5 && !snooze) {
+      var bk = el('button', { class: 'btn small', type: 'button' }, 'Save backup file');
+      bk.addEventListener('click', function () { saveBackupFile(bk); });
+      var later = el('button', { class: 'btn ghost small', type: 'button' }, 'Remind me in 3 days');
+      later.addEventListener('click', function () { state.backupSnooze = Date.now() + 3 * 864e5; persist(); renderToday(); });
+      root.append(el('div', { class: 'banner warn' }, el('span', { class: 'lab' }, state.lastBackup ? 'Backup due' : 'Not backed up yet'),
+        el('strong', {}, 'Your decisions live only on this device.'),
+        el('span', {}, 'Save a backup to iCloud Drive or Files. It takes one tap.'), el('div', { class: 'actions', style: 'margin-top:8px' }, bk, later)));
+    }
+
     if (state.draft) {
       var dt = short(state.draft.data.decision, 60) || 'Untitled';
       var cont = el('button', { class: 'btn ghost small', type: 'button' }, 'Continue draft');
@@ -719,7 +763,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       var mk = el('button', { class: 'btn small', type: 'button' }, 'Make it a decision');
       mk.addEventListener('click', function () { startFlow(j); });
       var del = el('button', { class: 'btn danger small', type: 'button' }, 'Delete');
-      armDelete(del, function () { state.jots = state.jots.filter(function (x) { return x.id !== j.id; }); persist(); renderToday(); });
+      armDelete(del, function () { state.gone = (state.gone || []).concat([j.id]).slice(-300); state.jots = state.jots.filter(function (x) { return x.id !== j.id; }); persist(); renderToday(); });
       jots.append(el('div', { class: 'jot' }, el('span', { class: 'mono' }, j.stamp), el('div', { class: 'text' }, j.text), el('div', { class: 'actions' }, mk, del)));
     });
     root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'Jot a thought' + (state.jots.length ? ' (' + state.jots.length + ' saved)' : ''))), el('div', { class: 'body' }, jotField.node, el('div', { class: 'actions' }, jotBtn), jots)));
@@ -1138,35 +1182,72 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     window.scrollTo(0, 0);
   }
 
+  function backupJSON() { return JSON.stringify({ app: 'lmc', saved: stamp(new Date()), records: state.records, jots: state.jots }); }
+  function saveBackupFile(btn) {
+    var name = 'lmc-backup-' + dkey(new Date()) + '.json', json = backupJSON(), label = btn.textContent;
+    var ok = function () { state.lastBackup = Date.now(); state.backupSnooze = 0; persist(); toast('Backup saved.'); if (screen === 'today') renderToday(); };
+    var note = function (m) { btn.textContent = m; setTimeout(function () { btn.textContent = label; }, 2400); };
+    try {
+      var f = new File([json], name, { type: 'application/json' });
+      if (navigator.canShare && navigator.canShare({ files: [f] })) {
+        navigator.share({ files: [f], title: 'Lead, Manage, Coach backup' }).then(ok, function (e) { if (!e || e.name !== 'AbortError') note('Could not save. Try Copy backup.'); });
+        return;
+      }
+    } catch (e) {}
+    try {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+      a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      ok();
+    } catch (e) { note('Not available here. Use Copy backup.'); }
+  }
+  function restoreText(raw) {
+    try {
+      var o = JSON.parse(raw), n = 0;
+      if (!o || !Array.isArray(o.records)) throw new Error('bad');
+      var have = {}; state.records.forEach(function (r) { have[r.id] = 1; });
+      o.records.forEach(function (r) { if (r && r.id && !have[r.id]) { state.records.push(r); n += 1; } });
+      var hj = {}; state.jots.forEach(function (j) { hj[j.id] = 1; });
+      (o.jots || []).forEach(function (j) { if (j && j.id && !hj[j.id]) state.jots.push(j); });
+      persist(); renderToday(); toast('Restored ' + n + ' decision' + (n === 1 ? '' : 's') + '. Nothing you already had was changed.');
+    } catch (e) { toast('That does not look like a backup.'); }
+  }
   function renderBackup(root) {
+    var body = el('div', { class: 'body' });
+    if (DB) {
+      body.append(el('div', { class: 'banner' }, el('span', { class: 'lab' }, 'Automatic backup is on'),
+        el('span', {}, 'Your decisions, thoughts, unfinished draft and settings save to your Claude account as you go, and come back on any device where you open this app.')));
+    } else {
+      body.append(el('p', { class: 'hint' }, 'Decisions live only on this device.' + (state.lastBackup ? ' Last backup: ' + dkey(new Date(state.lastBackup)) + '.' : ' Not backed up yet.') + ' Save a backup file to iCloud Drive or Files; the app reminds you weekly.'));
+    }
+    var fileB = el('button', { class: 'btn small', type: 'button' }, 'Save backup file');
+    fileB.addEventListener('click', function () { saveBackupFile(fileB); });
+    var fid = gid('f'), picker = el('input', { type: 'file', id: fid, accept: '.json,application/json,text/plain', style: 'display:none' });
+    picker.addEventListener('change', function () {
+      var f = picker.files && picker.files[0]; if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () { restoreText(String(rd.result || '')); };
+      rd.onerror = function () { toast('Could not read that file.'); };
+      rd.readAsText(f);
+    });
+    var pickB = el('button', { class: 'btn ghost small', type: 'button' }, 'Restore from a file');
+    pickB.addEventListener('click', function () { picker.click(); });
+    body.append(el('div', { class: 'actions' }, fileB, pickB), picker);
     var ta = el('textarea', { readonly: 'readonly', 'aria-label': 'Backup text', placeholder: 'Your backup text appears here after you tap Copy backup.' });
-    var copyB = el('button', { class: 'btn small', type: 'button' }, 'Copy backup');
+    var copyB = el('button', { class: 'btn small ghost', type: 'button' }, 'Copy backup');
     copyB.addEventListener('click', function () {
-      var json = JSON.stringify({ app: 'lmc', records: state.records, jots: state.jots });
+      var json = backupJSON();
       ta.value = json;
-      var label = 'Copy backup';
-      function done(m) { copyB.textContent = m; setTimeout(function () { copyB.textContent = label; }, 1800); }
+      function done(m) { copyB.textContent = m; setTimeout(function () { copyB.textContent = 'Copy backup'; }, 1800); }
       function sel() { ta.select(); done('Selected, tap Copy'); }
-      try { navigator.clipboard.writeText(json).then(function () { done('Copied'); }, sel); } catch (e) { sel(); }
+      try { navigator.clipboard.writeText(json).then(function () { done('Copied'); state.lastBackup = Date.now(); persist(); }, sel); } catch (e) { sel(); }
     });
-    var inp = textField('Paste a backup here to restore', '', function () {}, 'Paste the text you copied earlier.');
-    var restore = el('button', { class: 'btn ghost small', type: 'button' }, 'Restore');
-    restore.addEventListener('click', function () {
-      var raw = inp.control.value.trim();
-      if (!raw) { toast('Paste a backup first.'); return; }
-      try {
-        var o = JSON.parse(raw), n = 0;
-        if (!o || !Array.isArray(o.records)) throw new Error('bad');
-        var have = {}; state.records.forEach(function (r) { have[r.id] = 1; });
-        o.records.forEach(function (r) { if (r && r.id && !have[r.id]) { state.records.push(r); n += 1; } });
-        var hj = {}; state.jots.forEach(function (j) { hj[j.id] = 1; });
-        (o.jots || []).forEach(function (j) { if (j && j.id && !hj[j.id]) state.jots.push(j); });
-        persist(); renderToday(); toast('Restored ' + n + ' decision' + (n === 1 ? '' : 's') + '.');
-      } catch (e) { toast('That does not look like a backup.'); }
-    });
-    root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'Back up or restore')),
-      el('div', { class: 'body' }, el('p', { class: 'hint' }, 'Decisions are stored only in this browser. Copy a backup now and then and paste it into Notes or an email to yourself.'), ta,
-        el('div', { class: 'actions' }, copyB), inp.node, el('div', { class: 'actions' }, restore))));
+    var inp = textField('Or paste backup text here', '', function () {}, 'Paste the text you copied earlier.');
+    var restore = el('button', { class: 'btn ghost small', type: 'button' }, 'Restore pasted text');
+    restore.addEventListener('click', function () { var raw = inp.control.value.trim(); if (!raw) { toast('Paste a backup first.'); return; } restoreText(raw); });
+    body.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'Other ways: copy and paste')),
+      el('div', { class: 'body' }, ta, el('div', { class: 'actions' }, copyB), inp.node, el('div', { class: 'actions' }, restore))));
+    root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, DB ? 'Backup (automatic)' : 'Back up or restore')), body));
   }
 
   /* ---------- Guided flow ---------- */
