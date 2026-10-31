@@ -183,6 +183,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
 .ref p { margin: 0; }
 .ref .tag { font-family: var(--display); font-size: 17px; color: var(--coach); }
 .card.lazy details.entry { background: var(--field); }
+.pill.who { background: var(--surface); color: var(--fg); border-color: var(--fg); }
 .pill.lz { background: var(--coach-soft); color: var(--coach); border-color: var(--coach); }
 .card.lazy { border-left: 4px solid var(--coach); }
 .pill.kpi { background: var(--ks); color: var(--kc); border-color: var(--kc); }
@@ -346,7 +347,95 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       (p.captures || []).forEach(function (c) { if (c && !c.done) state.jots.push({ id: c.id, text: c.text, stamp: c.stamp }); });
     } catch (e) {}
   }
-  function persist() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+  function persist() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} syncUp(); }
+
+  /* ---------- Shared team log (works in the Claude copy; the Home Screen copy stays on this device) ---------- */
+  var DB = null, USER = null, ME = null, team = [], teamReady = false, viewMode = 'mine', lastJS = {}, pend = {}, names = {}, wq = Promise.resolve(), screen = 'today';
+  function body(r) { var b = JSON.parse(JSON.stringify(r)); delete b._missedIdx; return b; }
+  function put(r) {
+    if (!DB || !ME) return;
+    var b = body(r), id = r.id;
+    pend[id] = 1;
+    wq = wq.then(function () { return DB.doc('decisions/' + id).set(b); }).catch(function (e) {
+      if (e && e.code === 'quota_exceeded') toast('The team log is full. Delete some old decisions.');
+    }).then(function () { delete pend[id]; });
+  }
+  function syncUp() {
+    if (!DB || !teamReady) return;
+    var any = false;
+    state.records.forEach(function (r) {
+      if (r.by && r.by !== ME) return;
+      if (!r.by || !r.cloud) { r.by = ME; r.cloud = true; }
+      if (lastJS[r.id] !== JSON.stringify(body(r))) { r.updated = Date.now(); lastJS[r.id] = JSON.stringify(body(r)); put(r); any = true; }
+    });
+    if (any) { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+  }
+  function removeShared(r) {
+    if (!DB || !r.cloud) return;
+    state.gone = (state.gone || []).concat([r.id]).slice(-200);
+    var id = r.id;
+    wq = wq.then(function () { return DB.doc('decisions/' + id).delete(); }).catch(function () {});
+  }
+  function onTeam(snap) {
+    team = snap.docs.map(function (x) { return x.data(); }).filter(function (x) { return x && x.id; });
+    if (snap.metadata && snap.metadata.fromCache) { refresh(); return; }
+    var map = {}; team.forEach(function (x) { map[x.id] = x; });
+    var gone = state.gone || [];
+    state.records = state.records.filter(function (r) {
+      if (r.by && r.by !== ME) return false;
+      return !(r.cloud && !map[r.id] && !pend[r.id] && lastJS[r.id] !== undefined);
+    });
+    state.records.forEach(function (r, i) {
+      var c = map[r.id];
+      if (!c) {
+        if (!pend[r.id] && lastJS[r.id] === undefined) { r.by = ME; r.cloud = true; r.updated = r.updated || Date.now(); lastJS[r.id] = JSON.stringify(body(r)); put(r); }
+        return;
+      }
+      if ((c.updated || 0) > (r.updated || 0)) state.records[i] = JSON.parse(JSON.stringify(c));
+      else if ((r.updated || 0) > (c.updated || 0) && !pend[r.id]) put(r);
+      lastJS[r.id] = JSON.stringify(body(state.records[i]));
+    });
+    var have = {}; state.records.forEach(function (r) { have[r.id] = 1; });
+    team.forEach(function (c) {
+      if (c.by === ME && !have[c.id] && gone.indexOf(c.id) < 0) { var cp = JSON.parse(JSON.stringify(c)); state.records.push(cp); lastJS[cp.id] = JSON.stringify(body(cp)); }
+    });
+    teamReady = true;
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    refresh();
+  }
+  function refresh() {
+    if (screen !== 'today') return;
+    var a = document.activeElement;
+    if (a && app.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+    var y = window.scrollY; renderToday(); window.scrollTo(0, y);
+  }
+  function nameOf(id) { if (!id || id === ME) return 'You'; return names[id] || 'A colleague'; }
+  function loadNames(list) {
+    if (!USER) return;
+    var ids = {}; list.forEach(function (r) { if (r.by) ids[r.by] = 1; (r.challenges || []).forEach(function (c) { if (c.by) ids[c.by] = 1; }); });
+    if (ME) ids[ME] = 1;
+    var arr = Object.keys(ids); if (!arr.length) return;
+    USER.profiles(arr).then(function (ps) {
+      var ch = false;
+      Object.keys(ps).forEach(function (k) { var n = ps[k] && ps[k].name || ''; if (n && names[k] !== n) { names[k] = n; ch = true; } });
+      if (ch) refresh();
+    }, function () {});
+  }
+  function startShared() {
+    try {
+      if (!window.claude || typeof window.claude.use !== 'function') return;
+      window.claude.use('user').then(function (u) {
+        USER = u; return u ? u.id() : null;
+      }).then(function (id) {
+        ME = id; return ME ? window.claude.use('db') : null;
+      }).then(function (d) {
+        if (!d) return;
+        DB = d;
+        DB.collection('decisions').onSnapshot(onTeam, function () { DB = null; teamReady = false; viewMode = 'mine'; refresh(); });
+        refresh();
+      }, function () {});
+    } catch (e) {}
+  }
 
   /* ---------- Helpers ---------- */
   function el(tag, attrs) {
@@ -492,8 +581,8 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
   }
 
   /* ---------- Filters ---------- */
-  function filterBar() {
-    function uniq(f) { var o = {}; state.records.forEach(function (r) { if (r[f]) o[r[f]] = 1; }); return Object.keys(o).sort(); }
+  function filterBar(src) {
+    function uniq(f) { var o = {}; src.forEach(function (r) { if (r[f]) o[r[f]] = 1; }); return Object.keys(o).sort(); }
     function sel(label, opts, key) {
       var id = gid('f'), s = el('select', { id: id });
       s.append(el('option', { value: '' }, 'All'));
@@ -520,8 +609,12 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     clearInterval(timer);
     stopMic();
     flow = null;
+    screen = 'today';
     app.replaceChildren();
     var root = el('div', { class: 'stack' });
+    var isTeam = viewMode === 'team' && !!DB;
+    var src = isTeam ? team : state.records;
+    loadNames(src);
 
     var head = el('div', { class: 'stack tight' },
       el('span', { class: 'eyebrow' }, 'ABM Franchising Group / Linc Service & TEGG'),
@@ -531,6 +624,8 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     root.append(head);
     root.append(el('div', { class: 'field' }, el('span', { class: 'lab' }, 'I am using this as'),
       chipGroup(ROLES, state.role, function (v) { state.role = v; persist(); toast(v === 'AVP' ? 'Examples now fit AVP work with franchisees.' : 'Examples now fit franchisor leadership.'); }, 'seg')));
+    if (DB) root.append(el('div', { class: 'field' }, el('span', { class: 'lab' }, 'Show'),
+      chipGroup(['Mine', 'Team'], isTeam ? 'Team' : 'Mine', function (v) { viewMode = v === 'Team' ? 'team' : 'mine'; filt = { brand: '', func: '', fr: '' }; renderToday(); }, 'seg')));
 
     var go = el('button', { class: 'btn', type: 'button' }, 'New decision');
     go.addEventListener('click', function () { startFlow(null); });
@@ -540,7 +635,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
 
     var row = el('div', { class: 'disc-row' });
     Object.keys(DISC).forEach(function (k) {
-      var n = state.records.filter(function (r) { return r.discipline === k && status(r).rank <= 1; }).length;
+      var n = src.filter(function (r) { return r.discipline === k && status(r).rank <= 1; }).length;
       var t = el('button', { class: 'tile', type: 'button', 'aria-pressed': filterDisc === k ? 'true' : 'false', 'data-d': k },
         el('span', { class: 'l' }, k), el('span', { class: 's' }, DISC[k].line), el('span', { class: 'n' }, n ? n + ' open' : 'none open'));
       t.addEventListener('click', function () { filterDisc = filterDisc === k ? '' : k; renderToday(); });
@@ -557,8 +652,8 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       root.append(el('div', { class: 'banner warn' }, el('span', { class: 'lab' }, 'Unfinished'), el('strong', {}, dt), el('div', { class: 'actions', style: 'margin-top:8px' }, cont, drop)));
     }
 
-    if (state.records.length) root.append(filterBar());
-    var recs = state.records.filter(function (r) { return (!filterDisc || r.discipline === filterDisc) && (!filt.brand || r.brand === filt.brand) && (!filt.func || r.func === filt.func) && (!filt.fr || r.franchisee === filt.fr); }).sort(function (a, b) {
+    if (src.length) root.append(filterBar(src));
+    var recs = src.filter(function (r) { return (!filterDisc || r.discipline === filterDisc) && (!filt.brand || r.brand === filt.brand) && (!filt.func || r.func === filt.func) && (!filt.fr || r.franchisee === filt.fr); }).sort(function (a, b) {
       var sa = status(a).rank, sb = status(b).rank;
       if (sa !== sb) return sa - sb;
       return (a.decision.due || '9999') < (b.decision.due || '9999') ? -1 : 1;
@@ -567,7 +662,8 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     var open = recs.filter(function (r) { return status(r).rank === 1; }).length;
 
     var fl = [filterDisc, filt.brand, filt.func, filt.fr].filter(Boolean);
-    root.append(el('h3', {}, fl.length ? 'Decisions: ' + fl.join(' / ') : 'Your decisions'));
+    root.append(el('h3', {}, (isTeam ? 'Team decisions' : 'Your decisions') + (fl.length ? ': ' + fl.join(' / ') : '')));
+    if (isTeam) root.append(el('p', { class: 'hint' }, 'Everyone\'s decisions, read-only. Open one to read the brief or add a challenge.'));
     if (recs.length) {
       root.append(el('div', { class: 'banner' }, el('span', { class: 'lab' }, hot ? 'Needs you now' : 'Nothing overdue'), el('strong', {}, hot + ' due, ' + open + ' with a next step open')));
       var today = dkey(new Date()), horizon = plusDays(today, 7), up = [];
@@ -581,16 +677,17 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       if (up.length) {
         var uc = el('div', { class: 'card' }, el('h3', {}, 'Coming up (next 7 days)'));
         up.slice(0, 6).forEach(function (x) {
-          uc.append(el('div', { class: 'rep-row' }, el('span', { class: 'k' }, (x.date < today ? 'Overdue, ' : '') + x.what + ': ' + x.date), el('span', { class: 'v' }, x.r.title)));
+          uc.append(el('div', { class: 'rep-row' }, el('span', { class: 'k' }, (x.date < today ? 'Overdue, ' : '') + x.what + ': ' + x.date + (isTeam ? ' / ' + nameOf(x.r.by) : '')), el('span', { class: 'v' }, x.r.title)));
         });
         root.append(uc);
       }
       var list = el('div', { class: 'stack tight' });
-      recs.forEach(function (r) { list.append(recordCard(r)); });
+      recs.forEach(function (r) { list.append(isTeam ? teamCard(r) : recordCard(r)); });
       root.append(list);
     } else {
-      root.append(el('p', { class: 'empty' }, fl.length && state.records.length ? 'No decisions match these filters. Clear them to see all.' : 'Nothing here yet. Tap New decision to work through your first one. This is what a finished one looks like:'));
-      root.append(el('div', { class: 'card example' },
+      if (isTeam && !fl.length) root.append(el('p', { class: 'empty' }, 'No team decisions yet. They appear here as people save them.'));
+      else root.append(el('p', { class: 'empty' }, fl.length && src.length ? 'No decisions match these filters. Clear them to see all.' : 'Nothing here yet. Tap New decision to work through your first one. This is what a finished one looks like:'));
+      if (!isTeam) root.append(el('div', { class: 'card example' },
         el('div', { class: 'pills' }, el('span', { class: 'pill' }, 'EXAMPLE'), el('span', { class: 'pill' }, 'Manage'), el('span', { class: 'pill' }, 'TEGG'), el('span', { class: 'pill kpi', 'data-k': 'Yellow' }, 'PM renewals: Yellow'), el('span', { class: 'pill live' }, 'Coach Only')),
         el('strong', {}, 'Lift PM contract renewals back to plan'),
         el('div', { class: 'next' }, el('b', {}, 'Next step: '), 'Owner calls the five PM accounts up for renewal. Due Friday. Check back at the next visit.')));
@@ -615,7 +712,8 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     });
     root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'Jot a thought' + (state.jots.length ? ' (' + state.jots.length + ' saved)' : ''))), el('div', { class: 'body' }, jotField.node, el('div', { class: 'actions' }, jotBtn), jots)));
 
-    renderReview(root);
+    renderMonthly(root, src, isTeam);
+    renderReview(root, src, isTeam);
     renderBackup(root);
 
     /* Help */
@@ -630,13 +728,14 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       el('li', {}, el('b', {}, 'Who is affected. '), el('span', {}, 'By the decision, and by how it turns out.')),
       el('li', {}, el('b', {}, 'In our control. '), el('span', {}, 'Sort what you control, what you can influence, and what you cannot.')),
       el('li', {}, el('b', {}, 'What are we missing. '), el('span', {}, 'After a short pause, look for blind spots and the ABMFG risk that worries you most.')),
+      el('li', {}, el('b', {}, 'Impact. '), el('span', {}, 'The number that will move, today versus target, and the expected dollars a year. At check-back, enter the actual number.')),
       el('li', {}, el('b', {}, 'How and when. '), el('span', {}, 'The plan, a first step, an owner and a date.')),
       el('li', {}, el('b', {}, 'Check back. '), el('span', {}, 'Compare what happened with what you expected.'))
     );
     root.append(lazyRef('The Laziness Theory (reference)'));
     root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'How it works')),
       el('div', { class: 'body' }, steps, el('p', { class: 'hint' }, 'Guiding idea: an idea is only an impression until you have checked it, and your effort belongs on what is in your control.'),
-        el('p', { class: 'hint' }, 'Saved decisions stay on this device. To share one with your team, open it and tap Share with team. Open report gives a one-page brief to share or print. Back up from the bottom of this screen.'))));
+        el('p', { class: 'hint' }, 'In the Claude app, decisions also save to the shared team log: switch Show to Team to see everyone\'s, and run the monthly review from there. The Home Screen copy keeps decisions on this device only. Open report gives a one-page brief to share or print.'))));
 
     app.append(root);
   }
@@ -646,6 +745,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     var body = el('div', { class: 'body' });
     var dl = el('dl', { class: 'sum' });
     [['Type', r.discipline || '-']].concat(r.brand ? [['Brand', r.brand]] : [], r.func ? [['Function', r.func]] : [], r.franchisee ? [['Franchisee', r.franchisee]] : [],
+      r.impact ? [['Impact', impactLine(r)]] : [],
       r.lazy ? [['Lazy path', r.lazy.path + (r.lazy.how ? ': ' + r.lazy.how : '')]] : [],
       r.lmc && r.lmc.kpi ? [['KPI', r.lmc.kpi + ': ' + r.lmc.status + (r.lmc.prev ? ' (last visit ' + r.lmc.prev + ')' : '')], ['Response', r.lmc.level]] : [], r.why ? [['Why', r.why]] : [],
       r.who && r.who.length ? [['Affects', r.who.map(function (w) { return w.name; }).join(', ')]] : [],
@@ -676,14 +776,16 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       var call = 'Worked', note = '';
       var nf = textField('How did it turn out compared with what you expected?', '', function (v) { note = v; }, 'What happened, and what surprised you?');
       var cg = chipGroup(['It worked', 'Partly', 'It did not'], '', function (v) { call = v; });
-      var shift = '';
+      var shift = '', actual = '';
+      var af = (r.impact && r.impact.metric) ? textField('Where is ' + r.impact.metric + ' now?' + (r.impact.target ? ' (target ' + r.impact.target + ')' : ''), '', function (v) { actual = v; }, r.impact.base ? 'It was ' + r.impact.base + ' when you decided.' : 'The number today.', 'input') : null;
+      if (af) af.control.setAttribute('inputmode', 'decimal');
       var sg = el('div', { class: 'field' }, el('span', { class: 'lab' }, 'Laziness Theory: did this shift work onto someone else?'), chipGroup(SHIFT, '', function (v) { shift = v; }));
       var log = el('button', { class: 'btn small', type: 'button' }, 'Log result');
       log.addEventListener('click', function () {
         if (!cg.querySelector('input:checked')) { toast('Pick how it turned out.'); return; }
         var mi = r._missedIdx || 0, na = (r.answers || []).length;
         delete r._missedIdx;
-        r.outcome = { call: call, shift: shift, note: note.trim(), stamp: stamp(new Date()), missed: mi === 0 ? '' : (mi === na + 1 ? 'Something we never asked' : r.answers[mi - 1].q) };
+        r.outcome = { call: call, shift: shift, actual: actual.trim(), note: note.trim(), stamp: stamp(new Date()), missed: mi === 0 ? '' : (mi === na + 1 ? 'Something we never asked' : r.answers[mi - 1].q) };
         persist(); renderToday(); toast('Logged. If it went badly, look again at the answers you were unsure about.');
       });
       var mf = null, msel = null, mopts = [];
@@ -695,7 +797,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
         mf = el('div', { class: 'field' }, el('label', { class: 'q', for: mid }, 'If it went wrong, which question would have caught it?'), msel);
       }
       log.addEventListener('click', function () { r._missedIdx = msel ? msel.selectedIndex : 0; }, true);
-      body.append(el('h3', {}, 'Check back'), nf.node, cg, sg, mf, el('div', { class: 'actions' }, log));
+      body.append(el('h3', {}, 'Check back'), af ? af.node : null, nf.node, cg, sg, mf, el('div', { class: 'actions' }, log));
     }
     var pre = el('pre', {}, r.md);
     var chText = function () {
@@ -758,9 +860,9 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     var cal = (d.check && !HALT[d.verdict]) ? el('button', { class: 'btn small ghost', type: 'button' }, 'Add check-back to calendar') : null;
     if (cal) cal.addEventListener('click', function () { addToCalendar(r, cal); });
     var del = el('button', { class: 'btn danger small', type: 'button' }, 'Delete');
-    armDelete(del, function () { state.records = state.records.filter(function (x) { return x.id !== r.id; }); persist(); renderToday(); });
+    armDelete(del, function () { removeShared(r); state.records = state.records.filter(function (x) { return x.id !== r.id; }); persist(); renderToday(); });
     var chs = el('div', { class: 'stack tight' });
-    (r.challenges || []).forEach(function (c) { chs.append(el('div', { class: 'banner' }, el('span', { class: 'lab' }, 'Challenge from ' + (c.from || 'a colleague')), el('span', {}, c.text))); });
+    (r.challenges || []).forEach(function (c) { chs.append(el('div', { class: 'banner' }, el('span', { class: 'lab' }, 'Challenge from ' + (c.by ? nameOf(c.by) : (c.from || 'a colleague'))), el('span', {}, c.text))); });
     var cFrom = '', cText = '';
     var cf1 = textField('Who challenged this?', '', function (v) { cFrom = v; }, 'Name', 'input');
     var cf2 = textField('What did they say?', '', function (v) { cText = v; }, 'Their weakest assumption, what is missing, what they would do differently.');
@@ -783,8 +885,113 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       body);
   }
 
-  function renderReview(root) {
-    var all = state.records;
+  function teamCard(r) {
+    var s = status(r), d = r.decision || {};
+    var dl = el('dl', { class: 'sum' });
+    [['Owner', nameOf(r.by)], ['Type', r.discipline], ['Brand', r.brand], ['Function', r.func], ['Franchisee', r.franchisee],
+     ['KPI', r.lmc && r.lmc.kpi ? r.lmc.kpi + ': ' + r.lmc.status : ''], ['Response', r.lmc ? r.lmc.level : ''], ['Impact', impactLine(r)],
+     ['Lazy path', r.lazy && r.lazy.path !== LAZY_NONE ? r.lazy.path : ''], ['Decision', d.verdict], ['First step', d.action], ['Do by', d.due], ['Check back', d.check],
+     ['Result', r.outcome ? r.outcome.call + (r.outcome.note ? ': ' + r.outcome.note : '') : '']].forEach(function (p) {
+      if (p[1]) dl.append(el('dt', {}, p[0]), el('dd', {}, String(p[1])));
+    });
+    var body = el('div', { class: 'body' }, dl);
+    (r.challenges || []).forEach(function (c) { body.append(el('div', { class: 'banner' }, el('span', { class: 'lab' }, 'Challenge from ' + (c.by ? nameOf(c.by) : (c.from || 'a colleague'))), el('span', {}, c.text))); });
+    var rep = el('button', { class: 'btn small', type: 'button' }, 'Open report');
+    rep.addEventListener('click', function () { renderReport(r); });
+    if (r.by !== ME) {
+      var txt = '';
+      var cf = textField('Challenge this decision', '', function (v) { txt = v; }, 'The weakest assumption, what is missing, or what you would do differently.');
+      var send = el('button', { class: 'btn small ghost', type: 'button' }, 'Add challenge');
+      send.addEventListener('click', function () {
+        if (!txt.trim() || !DB) { toast('Write the challenge first.'); return; }
+        send.disabled = true;
+        var arr = (r.challenges || []).concat([{ by: ME, from: '', text: txt.trim(), stamp: stamp(new Date()) }]);
+        DB.doc('decisions/' + r.id).update({ challenges: arr, updated: Date.now() }).then(function () { toast('Challenge added. ' + nameOf(r.by) + ' will see it.'); }, function () { send.disabled = false; toast('Could not save that challenge. Try again.'); });
+      });
+      body.append(cf.node, el('div', { class: 'actions' }, rep, send));
+    } else {
+      body.append(el('p', { class: 'hint' }, 'This one is yours. Switch to Mine to update it.'), el('div', { class: 'actions' }, rep));
+    }
+    var nextLine = (d.action && !HALT[d.verdict]) ? el('div', { class: 'next' }, el('b', {}, 'Next: '), d.action + (d.due ? ' (by ' + d.due + ')' : '')) : null;
+    return el('details', { class: 'entry' },
+      el('summary', {}, el('span', { class: 't' }, r.title),
+        el('span', { class: 'pills' }, el('span', { class: 'pill who' }, nameOf(r.by)), r.discipline ? el('span', { class: 'mark', title: r.discipline, 'data-d': r.discipline }, DISC[r.discipline] ? DISC[r.discipline].m : '') : null, el('span', { class: 'pill ' + s.cls }, s.label), r.brand ? el('span', { class: 'pill' }, r.brand) : null, r.franchisee ? el('span', { class: 'pill' }, short(r.franchisee, 22)) : null, r.lmc && r.lmc.status ? el('span', { class: 'pill kpi', 'data-k': r.lmc.status }, short(r.lmc.kpi, 18) + ': ' + r.lmc.status) : null, r.lmc && r.lmc.level ? el('span', { class: 'pill ' + (LEVELS[r.lmc.level] ? LEVELS[r.lmc.level].cls : '') }, r.lmc.level) : null, el('span', { class: 'mono' }, r.stamp)),
+        nextLine),
+      body);
+  }
+
+  /* ---------- Impact ---------- */
+  var IMPACT_UNITS = ['$', '%', 'Count', 'Days'];
+  function num(x) { var v = parseFloat(String(x == null ? '' : x).replace(/[$,%\s]/g, '')); return isNaN(v) ? NaN : v; }
+  function money(n) { return (n < 0 ? '-$' : '$') + Math.round(Math.abs(n)).toLocaleString('en-US'); }
+  function fmtNum(n, u) { if (u === '$') return money(n); var r = Math.round(n * 10) / 10; return r.toLocaleString('en-US') + (u === '%' ? '%' : (u === 'Days' ? ' days' : '')); }
+  function gapPct(r) {
+    var i = r.impact, a = r.outcome && r.outcome.actual;
+    if (!i || a == null || a === '') return null;
+    var b = num(i.base), t = num(i.target), v = num(a);
+    if (isNaN(b) || isNaN(t) || isNaN(v) || t === b) return null;
+    return (v - b) / (t - b);
+  }
+  function impactLine(r) {
+    var i = r.impact; if (!i) return '';
+    var t = [];
+    if (i.metric) t.push(i.metric + (i.base !== '' || i.target !== '' ? ': ' + (i.base || '?') + ' to ' + (i.target || '?') : ''));
+    if (r.outcome && r.outcome.actual) t.push('actual ' + r.outcome.actual + (gapPct(r) != null ? ' (' + Math.round(gapPct(r) * 100) + '% of the gap)' : ''));
+    if (!isNaN(num(i.dollars))) t.push(money(num(i.dollars)) + ' a year expected');
+    return t.join(', ');
+  }
+  function impactTotals(list) {
+    var live = list.filter(function (r) { return r.impact && !isNaN(num(r.impact.dollars)) && !HALT[(r.decision || {}).verdict]; });
+    var exp = live.reduce(function (n, r) { return n + num(r.impact.dollars); }, 0);
+    var meas = list.filter(function (r) { return gapPct(r) != null; });
+    var del = meas.reduce(function (n, r) { var g = Math.max(0, Math.min(1, gapPct(r))); return n + (isNaN(num(r.impact.dollars)) ? 0 : num(r.impact.dollars) * g); }, 0);
+    var avg = meas.length ? meas.reduce(function (n, r) { return n + gapPct(r); }, 0) / meas.length : null;
+    return { n: live.length, exp: exp, meas: meas.length, del: del, avg: avg };
+  }
+  function impactText(list) {
+    var T = impactTotals(list);
+    if (!T.n && !T.meas) return '';
+    return 'Expected ' + money(T.exp) + ' a year across ' + T.n + ' decision' + (T.n === 1 ? '' : 's') + '.' +
+      (T.meas ? ' Measured on ' + T.meas + ': about ' + money(T.del) + ' delivered so far, closing ' + Math.round(T.avg * 100) + '% of the gap on average.' : ' Enter actual numbers at check-back to measure what was delivered.');
+  }
+
+  /* ---------- Monthly review ---------- */
+  function renderMonthly(root, list, isTeam) {
+    if (!list.length) return;
+    var today = dkey(new Date()), since = plusDays(today, -30);
+    var who = function (r) { return isTeam ? ' (' + nameOf(r.by) + ')' : ''; };
+    var due = list.filter(function (r) { return status(r).rank === 0; });
+    var made = list.filter(function (r) { return (r.stamp || '').slice(0, 10) >= since; });
+    var res = list.filter(function (r) { return r.outcome && (r.outcome.stamp || '').slice(0, 10) >= since; });
+    var miss = res.filter(function (r) { return r.outcome.call !== 'It worked'; });
+    var big = list.filter(function (r) { return !r.outcome && r.lmc && (r.lmc.level === 'Plan Reset' || r.lmc.level === 'Strategic Adjustment'); });
+    var lz = res.filter(function (r) { return r.lazy && r.lazy.path !== LAZY_NONE && r.outcome.shift; });
+    var real = lz.filter(function (r) { return r.outcome.shift === 'No' && r.outcome.call !== 'It did not'; }).length;
+    var cnt = function (a, k) { return a.filter(function (r) { return r.discipline === k; }).length; };
+    var S = [
+      ['Overdue check-backs', due.length ? due.slice(0, 8).map(function (r) { return r.title + who(r) + ', due ' + ((r.decision || {}).check || (r.decision || {}).due || '-'); }) : ['None. Good.']],
+      ['Plan Resets and Strategic Adjustments still open', big.length ? big.map(function (r) { return r.title + who(r) + (r.franchisee ? ', ' + r.franchisee : '') + ': ' + r.lmc.level; }) : ['None open.']],
+      ['Decisions made in the last 30 days', [made.length + ' total: ' + cnt(made, 'Lead') + ' Lead, ' + cnt(made, 'Manage') + ' Manage, ' + cnt(made, 'Coach') + ' Coach.']],
+      ['Results logged in the last 30 days', res.length ? [res.filter(function (r) { return r.outcome.call === 'It worked'; }).length + ' worked, ' + res.filter(function (r) { return r.outcome.call === 'Partly'; }).length + ' partly, ' + res.filter(function (r) { return r.outcome.call === 'It did not'; }).length + ' did not.'] : ['None logged yet.']],
+      ['Misses and lessons', miss.length ? miss.slice(0, 6).map(function (r) { return r.title + who(r) + ': ' + (r.outcome.missed ? 'would have been caught by "' + r.outcome.missed + '"' : (r.outcome.note || 'no note')); }) : ['No misses logged this month.']],
+      ['Impact', [impactText(list) || 'No impact numbers yet. Add them on new decisions.']],
+      ['Laziness Theory', lz.length ? [real + ' real laziness, ' + (lz.length - real) + ' false laziness (work shifted or result suffered).'] : ['No least-effort results logged this month.']]
+    ];
+    var body = el('div', { class: 'body' });
+    S.forEach(function (x, k) {
+      var ol = el('ul', { class: 'steps' });
+      x[1].forEach(function (t) { ol.append(el('li', {}, el('span', {}, t))); });
+      body.append(el('h3', {}, (k + 1) + '. ' + x[0]), ol);
+    });
+    var txt = (isTeam ? 'TEAM' : 'MY') + ' DECISION REVIEW / ' + today + '\n\n' + S.map(function (x, k) { return (k + 1) + '. ' + x[0] + '\n' + x[1].map(function (t) { return '- ' + t; }).join('\n'); }).join('\n\n');
+    var cp = el('button', { class: 'btn small ghost', type: 'button' }, 'Copy agenda');
+    cp.addEventListener('click', function () { copyText(txt, cp, null); });
+    body.append(el('p', { class: 'hint' }, 'Run this in 15 minutes once a month: overdue first, then misses and lessons, then impact.'), el('div', { class: 'actions' }, cp));
+    root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, (isTeam ? 'Monthly team review' : 'Monthly review') + (due.length ? ' (' + due.length + ' overdue)' : ''))), body));
+  }
+
+  function renderReview(root, list, isTeam) {
+    var all = list || state.records;
     if (!all.length) return;
     var logged = all.filter(function (r) { return r.outcome; });
     var dl = el('dl', { class: 'sum' });
@@ -805,6 +1012,8 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       var real = lzl.filter(function (r) { return r.outcome.shift === 'No' && r.outcome.call !== 'It did not'; }).length;
       row('Laziness', lz.length + ' of ' + all.length + ' decisions found a less-effort path' + (lzl.length ? '. ' + real + ' of ' + lzl.length + ' checked kept the result without shifting work (real laziness); ' + (lzl.length - real) + ' did not (false laziness).' : '. Log results to see real versus false laziness.'));
     }
+    var it = impactText(all);
+    if (it) row('Impact', it);
     var chk = all.reduce(function (n, r) { return n + openChecks(r); }, 0);
     if (chk) row('To verify', chk + ' open check' + (chk > 1 ? 's' : ''));
     row('Overdue', overdue ? overdue + ' check-back' + (overdue > 1 ? 's' : '') + ' waiting' : 'none');
@@ -818,7 +1027,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     }); });
     if (ans.length) {
       var un = ans.filter(function (a) { return a.conf && a.conf !== CONF[0]; }).length;
-      row('Unverified', Math.round(un / ans.length * 100) + '% of your answers were belief or unknown');
+      row('Unverified', Math.round(un / ans.length * 100) + '% of ' + (isTeam ? 'answers' : 'your answers') + ' were belief or unknown');
     }
     var top = Object.keys(tally).sort(function (a, b) { return tally[b] - tally[a]; }).slice(0, 3);
     var body = el('div', { class: 'body' }, dl);
@@ -842,19 +1051,20 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     } else {
       body.append(el('p', { class: 'hint' }, 'Log results on a few more decisions and this will show whether unverified answers lead to worse outcomes.'));
     }
-    var xb = el('button', { class: 'btn small ghost', type: 'button' }, 'Copy all decisions for Excel');
+    var xb = el('button', { class: 'btn small ghost', type: 'button' }, isTeam ? 'Copy team decisions for Excel' : 'Copy all decisions for Excel');
     xb.addEventListener('click', function () {
       var cl = function (x) { return String(x == null ? '' : x).replace(/[\t\r\n]+/g, ' '); };
-      var rows = [['Date', 'Type', 'Brand', 'Function', 'Franchisee', 'KPI', 'KPI status', 'Response level', 'Decision', 'Choice', 'First step', 'Owner', 'Do by', 'Check back', 'Unverified answers', 'Open checks', 'Challenges', 'Result', 'Question that would have caught it', 'Least-effort path', 'Same result?', 'Shifted work?']];
+      var rows = [['Leader', 'Date', 'Type', 'Brand', 'Function', 'Franchisee', 'KPI', 'KPI status', 'Response level', 'Decision', 'Choice', 'First step', 'Owner', 'Do by', 'Check back', 'Unverified answers', 'Open checks', 'Challenges', 'Result', 'Question that would have caught it', 'Least-effort path', 'Same result?', 'Shifted work?', 'Metric', 'Baseline', 'Target', 'Actual', 'Expected $ impact per year', 'Gap closed']];
       all.forEach(function (r) {
         var d = r.decision || {};
         var L = r.lmc || {};
-        rows.push([r.stamp, r.discipline, r.brand, r.func, r.franchisee, L.kpi, L.status, L.level, r.title, d.verdict, d.action, d.owner, d.due, d.check, assumedCount(r), openChecks(r), (r.challenges || []).length, r.outcome ? r.outcome.call : '', r.outcome ? r.outcome.missed : '', r.lazy ? r.lazy.path : '', r.lazy ? r.lazy.same : '', r.outcome ? (r.outcome.shift || '') : ''].map(cl));
+        var I = r.impact || {}, gp = gapPct(r);
+        rows.push([(!r.by || r.by === ME) ? (names[ME] || 'Me') : nameOf(r.by), r.stamp, r.discipline, r.brand, r.func, r.franchisee, L.kpi, L.status, L.level, r.title, d.verdict, d.action, d.owner, d.due, d.check, assumedCount(r), openChecks(r), (r.challenges || []).length, r.outcome ? r.outcome.call : '', r.outcome ? r.outcome.missed : '', r.lazy ? r.lazy.path : '', r.lazy ? r.lazy.same : '', r.outcome ? (r.outcome.shift || '') : '', I.metric, I.base, I.target, r.outcome ? (r.outcome.actual || '') : '', isNaN(num(I.dollars)) ? '' : num(I.dollars), gp == null ? '' : Math.round(gp * 100) + '%'].map(cl));
       });
       copyText(rows.map(function (x) { return x.join('\t'); }).join('\n'), xb, null);
     });
     body.append(el('div', { class: 'actions' }, xb));
-    root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'Review how you decide')), body));
+    root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, isTeam ? 'Review how the team decides' : 'Review how you decide')), body));
   }
 
   function reportSections(r) {
@@ -867,6 +1077,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     if (r.lmc && r.lmc.kpi) add('LMC scorecard', [['KPI', r.lmc.kpi], ['Status this visit', r.lmc.status], ['Last visit', r.lmc.prev], ['Other KPIs Red', r.lmc.multi], ['Response level', r.lmc.level], ['What that means', LEVELS[r.lmc.level] ? LEVELS[r.lmc.level].act : '']]);
     add('Why', [['What is driving this', c.whyKind], ['Why now', r.why], ['If we do nothing', c.nowcost], ['How easily undone', c.reversible], ['Reflection', c.stoic]]);
     if (r.options) add('Options considered', [['Another option', r.options.alt1], ['A third option, or the opposite', r.options.alt2], ['Why this one', r.options.why]]);
+    if (r.impact) add('Impact', [['Metric', r.impact.metric], ['At decision', r.impact.base], ['Target', r.impact.target], ['Actual at check-back', r.outcome ? r.outcome.actual : ''], ['Gap closed', gapPct(r) != null ? Math.round(gapPct(r) * 100) + '%' : ''], ['Expected dollar impact per year', isNaN(num(r.impact.dollars)) ? '' : money(num(r.impact.dollars))]]);
     if (r.lazy) add('Laziness Theory', [['Least-effort path', r.lazy.path], ['What it looks like', r.lazy.how], ['Is the result just as good?', r.lazy.same], ['Did it shift work onto someone else?', r.outcome ? r.outcome.shift : '']]);
     if (r.matrix) add('Options compared', r.matrix.crit.map(function (c) { return [c.name + ' (matters ' + c.w + ' of 5)', r.matrix.opts.map(function (o, j) { return o + ': ' + c.s[j]; }).join('\n')]; }).concat([['Weighted result', r.matrix.opts.map(function (o, j) { return o + ' ' + Math.round(r.matrix.pct[j] * 100) + '%'; }).join('\n')]]));
     add('Critical questions', (r.answers || []).map(function (a, k) {
@@ -879,7 +1090,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     add('When', [['Choice', d.verdict], ['Predicted chance of working', r.predict != null ? Math.round(r.predict * 100) + '%' : ''], ['First step', d.action], ['Owner', d.owner], ['Do by', d.due], ['Check back', d.check]]);
     if (r.ai) add('Claude suggestions (not a verdict)', Object.keys(r.ai).filter(function (k) { return r.ai[k]; }).map(function (k) { return [AI_TITLES[k] || k, r.ai[k]]; }));
     add('Still to verify', (r.checks || []).map(function (x) { return [x.q, (x.done ? 'Verified. ' : 'Open. ') + (x.t || '')]; }));
-    add('Challenges received', (r.challenges || []).map(function (x) { return [x.from || 'Colleague', x.text]; }));
+    add('Challenges received', (r.challenges || []).map(function (x) { return [x.by ? nameOf(x.by) : (x.from || 'Colleague'), x.text]; }));
     add('Updates', (r.updates || []).map(function (u) { return [u.stamp, u.note || 'Plan updated']; }));
     if (r.outcome) add('Result and lesson', [['Result', r.outcome.call], ['What happened', r.outcome.note], ['Question that would have caught it', r.outcome.missed]]);
     if (!r.ctx && r.md) add('Saved summary', [['Summary', r.md]]);
@@ -891,11 +1102,12 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
   function renderReport(r) {
     clearInterval(timer);
     flow = null;
+    screen = 'report';
     app.replaceChildren();
     var root = el('div', { class: 'stack' });
     var back = el('button', { class: 'linkbtn noprint', type: 'button' }, 'Back to my decisions');
     back.addEventListener('click', function () { renderToday(); window.scrollTo(0, 0); });
-    root.append(back, el('span', { class: 'eyebrow' }, 'ABM Franchising Group / Decision brief / ' + r.stamp), el('h1', {}, r.title));
+    root.append(back, el('span', { class: 'eyebrow' }, 'ABM Franchising Group / Decision brief / ' + r.stamp + (r.by && r.by !== ME ? ' / ' + nameOf(r.by) : '')), el('h1', {}, r.title));
     reportSections(r).forEach(function (s) {
       var card = el('div', { class: 'card' }, el('h3', {}, s.h));
       s.rows.forEach(function (x) { card.append(el('div', { class: 'rep-row' }, el('span', { class: 'k' }, x[0]), el('span', { class: 'v' }, x[1]))); });
@@ -994,7 +1206,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
   var AI_TITLES = { missing: 'Claude: what might be missing', challenge: 'Claude: challenges to your answers', pressure: 'Claude: pressure test' };
   function qsFor(D) { return QS[D.discipline] || QS.Lead; }
   function blankData() {
-    return { discipline: filterDisc || '', brand: filt.brand || '', func: filt.func || '', franchisee: filt.fr || '', lmc: { kpi: '', other: '', status: '', prev: '', multi: '' }, lazy: { path: '', how: '', same: '' }, decision: '', why: '', nowcost: '', answers: [{}, {}, {}, {}, {}],
+    return { discipline: filterDisc || '', brand: filt.brand || '', func: filt.func || '', franchisee: filt.fr || '', lmc: { kpi: '', other: '', status: '', prev: '', multi: '' }, lazy: { path: '', how: '', same: '' }, impact: { metric: '', unit: '', base: '', target: '', dollars: '' }, decision: '', why: '', nowcost: '', answers: [{}, {}, {}, {}, {}],
       options: { alt1: '', alt2: '', why: '' }, who: [{ name: '', dec: '', out: '' }, { name: '', dec: '', out: '' }], blind: { fail: '', missing: '', oppose: '', change: '', risk: '', r0: '', r1: '' }, control: { mine: '', influence: '', outside: '' }, whyKind: '', reversible: '', matrix: { crit: [{ name: '', w: 3, s: [3, 3, 3] }, { name: '', w: 3, s: [3, 3, 3] }, { name: '', w: 3, s: [3, 3, 3] }] }, predict: '', ai: {}, stoic: STOIC_PROMPTS[Math.floor(Math.random() * STOIC_PROMPTS.length)],
       how: { plan: '', measure: '', needs: '' }, verdict: '', action: '', owner: '', due: '', check: '' };
   }
@@ -1017,6 +1229,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     if (d.data.brand === undefined) { d.data.brand = ''; d.data.func = ''; d.data.franchisee = ''; if (flow.i >= 1) flow.i += 1; }
     if (!d.data.lmc) { d.data.lmc = { kpi: '', other: '', status: '', prev: '', multi: '' }; if (d.data.discipline === 'Manage' && flow.i >= 2) flow.i += 1; }
     if (!d.data.lazy) d.data.lazy = { path: '', how: '', same: '' };
+    if (!d.data.impact) d.data.impact = { metric: '', unit: '', base: '', target: '', dollars: '' };
     if (d.data.blind && d.data.blind.risk === undefined) { d.data.blind.risk = ''; d.data.blind.r0 = ''; d.data.blind.r1 = ''; }
     renderFlow();
   }
@@ -1027,7 +1240,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
   }
   function stepList() {
     var sc = flow.data.discipline === 'Manage' ? ['scorecard'] : [];
-    return flow.quick ? ['kind', 'tags'].concat(sc, ['why', 'options', 'q0', 'q1', 'q4', 'who', 'when']) : ['kind', 'tags'].concat(sc, ['why', 'options', 'matrix', 'q0', 'q1', 'q2', 'q3', 'q4', 'who', 'control', 'blind', 'how', 'when']);
+    return flow.quick ? ['kind', 'tags'].concat(sc, ['why', 'options', 'q0', 'q1', 'q4', 'who', 'impact', 'when']) : ['kind', 'tags'].concat(sc, ['why', 'options', 'matrix', 'q0', 'q1', 'q2', 'q3', 'q4', 'who', 'control', 'blind', 'how', 'impact', 'when']);
   }
   function kpiName(L) { return L.kpi === 'Other' ? (L.other || '').trim() || 'Other' : L.kpi; }
   function chipField(label, opts, cur, onPick) {
@@ -1129,6 +1342,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
     if (D.control.mine || D.control.influence || D.control.outside) t.push('Control. Ours: ' + D.control.mine + '. Influence: ' + D.control.influence + '. Outside: ' + D.control.outside);
     if (D.blind.fail || D.blind.missing) t.push('If it failed: ' + D.blind.fail + '. Missing: ' + D.blind.missing);
     if (D.blind.risk) t.push('Biggest risk: ' + D.blind.risk + '. ' + (D.blind.r0 || '') + ' ' + (D.blind.r1 || ''));
+    if (D.impact && (D.impact.metric || D.impact.dollars)) t.push('Impact: ' + D.impact.metric + ' from ' + (D.impact.base || '?') + ' to ' + (D.impact.target || '?') + (D.impact.dollars ? ', about $' + D.impact.dollars + ' a year' : ''));
     if (D.lazy && D.lazy.path) t.push('Laziness Theory: ' + D.lazy.path + (D.lazy.how ? '. ' + D.lazy.how : '') + (D.lazy.same ? '. Same result: ' + D.lazy.same : ''));
     var T = matrixTotals(D);
     if (T) t.push('Own scoring: ' + T.opts.map(function (o, j) { return o + ' ' + Math.round(T.pct[j] * 100) + '%'; }).join(', '));
@@ -1171,6 +1385,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
 
   function renderFlow() {
     clearInterval(timer);
+    screen = 'flow';
     stopMic();
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
     app.replaceChildren();
@@ -1421,6 +1636,30 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       main.append(textField('The plan in a few steps', D.how.plan, function (v) { D.how.plan = v; saveDraft(); }, 'Example: 1. Pilot with two franchisees. 2. Review at the next visit. 3. Roll out system-wide.').node,
         textField('How will we know it is working?', D.how.measure, function (v) { D.how.measure = v; saveDraft(); }, 'Example: PM renewal rate back to 90% within two quarters.').node,
         textField('What and who do we need?', D.how.needs, function (v) { D.how.needs = v; saveDraft(); }, 'Example: The AVP, one hour a week with the owner, the renewal list from BSTAR.').node);
+    } else if (step === 'impact') {
+      var I = D.impact;
+      if (!I.metric && D.discipline === 'Manage' && D.lmc.kpi) I.metric = kpiName(D.lmc);
+      if (!I.metric && D.how && D.how.measure) I.metric = short(D.how.measure, 60);
+      main.append(el('span', { class: 'eyebrow' }, 'Impact'), el('h2', {}, 'What impact do we expect?'),
+        el('p', { class: 'hint' }, 'Put a number on it so the check-back can measure it. Skip anything you cannot estimate yet.'));
+      var gapBox = el('div', {});
+      var drawGap = function () {
+        gapBox.replaceChildren();
+        var b = num(I.base), t = num(I.target);
+        if (!isNaN(b) && !isNaN(t) && b !== t) gapBox.append(el('div', { class: 'banner' }, el('span', { class: 'lab' }, 'Gap to close'), el('strong', {}, (t > b ? '+' : '') + fmtNum(t - b, I.unit))));
+      };
+      var nf2 = function (label, key, ph) {
+        var f = textField(label, I[key], function (v) { I[key] = v; saveDraft(); drawGap(); }, ph, 'input');
+        f.control.setAttribute('inputmode', 'decimal');
+        return f.node;
+      };
+      main.append(textField('Which number will move?', I.metric, function (v) { I.metric = v; saveDraft(); }, 'Example: PM contract renewal rate', 'input').node,
+        chipField('Unit', IMPACT_UNITS, I.unit, function (v) { I.unit = v; saveDraft(); drawGap(); }),
+        el('div', { class: 'two' }, nf2('Today', 'base', 'Example: 78'), nf2('Target', 'target', 'Example: 90')),
+        gapBox,
+        nf2('Expected dollar impact per year', 'dollars', 'Example: 45000'),
+        el('p', { class: 'hint' }, 'Dollar impact is the yearly revenue gained, cost avoided or margin protected if this works. A rough number is better than none.'));
+      drawGap();
     } else if (step === 'when') {
       main.append(el('span', { class: 'eyebrow' }, PH.When), el('h2', {}, 'When will you act?'), el('p', { class: 'hint' }, 'Pick one, then give it one first step and a date.'),
         chipGroup(VERDICTS, D.verdict, function (v) { D.verdict = v; saveDraft(); }, 'warnset'));
@@ -1507,6 +1746,9 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       md += '\n\n## What we might not be considering\nIf it failed: ' + t(D.blind.fail) + '\nMissing: ' + t(D.blind.missing) + '\nDisagreement: ' + t(D.blind.oppose) + '\nCould change: ' + t(D.blind.change) + (RISKS[D.blind.risk] ? '\nBiggest risk: ' + D.blind.risk + '\n  ' + RISKS[D.blind.risk][0].q + ' ' + t(D.blind.r0) + '\n  ' + RISKS[D.blind.risk][1].q + ' ' + t(D.blind.r1) : '');
       md += '\n\n## HOW\nPlan: ' + t(D.how.plan) + '\nWorking if: ' + t(D.how.measure) + '\nNeeds: ' + t(D.how.needs);
     }
+    var Im = D.impact || {};
+    var hasImp = (Im.metric || '').trim() || (Im.dollars || '').trim();
+    if (hasImp) md += '\n\n## IMPACT\nMetric: ' + t(Im.metric) + '\nToday: ' + t(Im.base) + '\nTarget: ' + t(Im.target) + (Im.unit ? ' (' + Im.unit + ')' : '') + '\nExpected per year: ' + (isNaN(num(Im.dollars)) ? '-' : money(num(Im.dollars)));
     md += '\n\n## WHEN\nVerdict: ' + D.verdict + '\nFirst step: ' + (D.action.trim() || '-') + '\nOwner: ' + (D.owner.trim() || '-') + '\nDo by: ' + (D.due || '-') + '\nCheck back: ' + (D.check || '-');
     state.records.unshift({
       id: uid(), discipline: D.discipline, brand: D.brand, func: D.func, franchisee: D.franchisee.trim(),
@@ -1517,6 +1759,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       control: qk ? null : { mine: D.control.mine.trim(), influence: D.control.influence.trim(), outside: D.control.outside.trim() },
       blind: qk ? null : { fail: D.blind.fail.trim(), missing: D.blind.missing.trim(), oppose: D.blind.oppose.trim(), change: D.blind.change.trim(), risk: RISKS[D.blind.risk] ? D.blind.risk : '', r0: (D.blind.r0 || '').trim(), r1: (D.blind.r1 || '').trim() },
       how: qk ? null : { plan: D.how.plan.trim(), measure: D.how.measure.trim(), needs: D.how.needs.trim() },
+      impact: hasImp ? { metric: (Im.metric || '').trim(), unit: Im.unit || '', base: (Im.base || '').trim(), target: (Im.target || '').trim(), dollars: (Im.dollars || '').trim() } : null,
       lazy: D.lazy.path ? { path: D.lazy.path, how: (D.lazy.how || '').trim(), same: D.lazy.same || '' } : null,
       quick: !!qk, options: { alt1: D.options.alt1.trim(), alt2: D.options.alt2.trim(), why: D.options.why.trim() }, challenges: [],
       checks: D.answers.map(function (a, k) { return a.conf === CONF[2] && ((a.a || '').trim() || a.pick) ? { q: QL[k].q, t: (a.chal || '').trim(), done: false } : null; }).filter(Boolean),
@@ -1534,6 +1777,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
 
   load();
   renderToday();
+  startShared();
 })();
 </script>
 
