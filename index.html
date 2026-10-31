@@ -180,6 +180,9 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
 [data-k="Green"] { --kc: var(--manage); --ks: var(--manage-soft); }
 [data-k="Yellow"] { --kc: var(--warn); --ks: var(--warn-soft); }
 [data-k="Red"] { --kc: var(--crit); --ks: var(--crit-soft); }
+.ref p { margin: 0; }
+.ref .tag { font-family: var(--display); font-size: 17px; color: var(--coach); }
+.card.lazy details.entry { background: var(--field); }
 .pill.lz { background: var(--coach-soft); color: var(--coach); border-color: var(--coach); }
 .card.lazy { border-left: 4px solid var(--coach); }
 .pill.kpi { background: var(--ks); color: var(--kc); border-color: var(--kc); }
@@ -275,6 +278,31 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
   var LAZY_NONE = 'None, it needs the effort';
   var SAME = ['Yes, just as good', 'Not sure', 'No, the result suffers'];
   var SHIFT = ['No', 'A little', 'Yes'];
+  function lazyRef(title) {
+    var b = el('div', { class: 'body ref' });
+    b.append(el('p', { class: 'tag' }, '"Work smart" is advice. Laziness is the motive that makes people follow it.'),
+      el('h3', {}, 'The claim'),
+      el('p', {}, 'Effort is not the same as value. Most organizations reward visible effort, and so they build busywork. The "lazy" person is not avoiding work. They are refusing to do pointless work.'),
+      el('h3', {}, 'How it works'),
+      el('p', {}, 'A lazy person asks: what is the least I can do to get this result? That question forces three things: a clear outcome, fewer steps, and a system that does not need heroics.'),
+      el('h3', {}, 'The four types'));
+    var dl = el('dl', { class: 'sum' });
+    [['Questioner', 'Stop it. Asks whether the work should exist at all, and what done looks like before anyone starts.'],
+     ['Automator', 'Automate it. Lets a system, like BSTAR, do the repeat work.'],
+     ['Delegator', 'Delegate it. Gets the work to the right owner instead of the bottleneck.'],
+     ['Simplifier', 'Simplify it. Cuts the steps that add nothing to the result.']].forEach(function (x) { dl.append(el('dt', {}, x[0]), el('dd', {}, x[1])); });
+    b.append(dl,
+      el('h3', {}, 'The guardrail'),
+      el('p', {}, el('b', {}, 'Lazy about the how, never the what. '), 'Hold the outcome constant. If the result is just as good with less effort, that is laziness working. If the result gets worse, it is cutting corners and fails the theory.'),
+      el('h3', {}, 'Real versus false laziness'),
+      el('p', {}, 'Judge the total effort across the whole system, not one desk. Real laziness lowers it. False laziness shifts it onto a colleague, a franchisee, a customer or your future self, and it usually comes back larger.'),
+      el('h3', {}, 'Habits for leaders'));
+    var ol = el('ol', { class: 'steps' });
+    ['Reward results, not hours.', 'Ask "what can we stop?" before "what should we add?"', 'Treat repeated manual work as a design flaw to fix.'].forEach(function (t) { ol.append(el('li', {}, el('span', {}, t))); });
+    b.append(ol, el('h3', {}, 'Where it shows up in this app'),
+      el('p', {}, 'The options step asks for a less-effort path and checks the result stays just as good. That path is scored with your other options. At check-back you note whether work shifted to someone else, and Review shows real versus false laziness over time.'));
+    return el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, title || 'The Laziness Theory')), b);
+  }
   function lazyOn(D) { return D.lazy && D.lazy.path && D.lazy.path !== LAZY_NONE; }
   var DISC = {
     'Lead': { m: 'L', line: 'Set direction', desc: 'Where the franchise or the system is going, and why.' },
@@ -605,6 +633,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       el('li', {}, el('b', {}, 'How and when. '), el('span', {}, 'The plan, a first step, an owner and a date.')),
       el('li', {}, el('b', {}, 'Check back. '), el('span', {}, 'Compare what happened with what you expected.'))
     );
+    root.append(lazyRef('The Laziness Theory (reference)'));
     root.append(el('details', { class: 'entry' }, el('summary', {}, el('span', { class: 't' }, 'How it works')),
       el('div', { class: 'body' }, steps, el('p', { class: 'hint' }, 'Guiding idea: an idea is only an impression until you have checked it, and your effort belongs on what is in your control.'),
         el('p', { class: 'hint' }, 'Saved decisions stay on this device. To share one with your team, open it and tap Share with team. Open report gives a one-page brief to share or print. Back up from the bottom of this screen.'))));
@@ -1274,7 +1303,7 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
       });
       main.append(el('div', { class: 'card stack tight lazy' }, el('span', { class: 'eyebrow' }, 'The Laziness Theory'),
         el('h3', {}, 'Is there a less-effort way to the same result?'),
-        el('p', { class: 'hint' }, 'Effort is not the same as value. Before adding work, ask what you could stop, automate, delegate or simplify.'), lzChips, lzBox));
+        el('p', { class: 'hint' }, 'Effort is not the same as value. Before adding work, ask what you could stop, automate, delegate or simplify.'), lazyRef('What is the Laziness Theory?'), lzChips, lzBox));
       drawLazy();
       addTool(main, 'missing', D);
     } else if (step === 'matrix') {
