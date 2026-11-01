@@ -1,19 +1,9 @@
-var CACHE = 'lmc-desk-v9';
-var FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
-self.addEventListener('install', function (e) {
-  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }).then(function () { return self.skipWaiting(); }));
-});
+/* Retired: this offline helper now removes itself so the app always loads straight from the site. */
+self.addEventListener('install', function () { self.skipWaiting(); });
 self.addEventListener('activate', function (e) {
-  e.waitUntil(caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== CACHE; }).map(function (k) { return caches.delete(k); }));
-  }).then(function () { return self.clients.claim(); }));
-});
-self.addEventListener('fetch', function (e) {
-  if (e.request.method !== 'GET') return;
-  var fresh = e.request.mode === 'navigate' || /\/(index\.html)?$/.test(new URL(e.request.url).pathname);
-  e.respondWith((fresh ? fetch(e.request.url, { cache: 'no-cache' }) : fetch(e.request)).then(function (res) {
-    var copy = res.clone();
-    caches.open(CACHE).then(function (c) { c.put(e.request, copy); }).catch(function () {});
-    return res;
-  }).catch(function () { return caches.match(e.request).then(function (m) { return m || caches.match('index.html'); }); }));
+  e.waitUntil(caches.keys().then(function (keys) { return Promise.all(keys.map(function (k) { return caches.delete(k); })); })
+    .then(function () { return self.registration.unregister(); })
+    .then(function () { return self.clients.matchAll({ type: 'window' }); })
+    .then(function (cs) { cs.forEach(function (c) { try { c.navigate(c.url); } catch (e) {} }); })
+    .catch(function () {}));
 });

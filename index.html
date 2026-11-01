@@ -1875,16 +1875,14 @@ pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.5; wh
 })();
 </script>
 
-<div class="mono" id="lmc-version" style="text-align:center;padding:4px 16px 120px">Home Screen version 2026-10-31.9</div>
+<div class="mono" id="lmc-version" style="text-align:center;padding:4px 16px 120px">Home Screen version 2026-10-31.10</div>
 <script>
-var LMC_VERSION = '2026-10-31.9';
-if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
-  window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
-      document.addEventListener('visibilitychange', function () { if (!document.hidden) { try { reg.update(); } catch (e) {} } });
-    }).catch(function () {});
-  });
+var LMC_VERSION = '2026-10-31.10';
+/* No offline helper: remove any old one so the page always comes straight from the site. */
+if ('serviceWorker' in navigator) {
+  try { navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); }).catch(function () {}); } catch (e) {}
 }
+if (window.caches) { try { caches.keys().then(function (k) { k.forEach(function (x) { caches.delete(x); }); }).catch(function () {}); } catch (e) {} }
 /* Update check: compare this page's version with the newest one on the site, and load the newer one if it differs. */
 function lmcCheck() {
   if (location.protocol.indexOf('http') !== 0) return;
